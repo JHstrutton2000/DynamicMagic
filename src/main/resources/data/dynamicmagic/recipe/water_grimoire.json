@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    { "item": "minecraft:book" },
+    { "item": "minecraft:prismarine_crystals" },
+    { "item": "minecraft:amethyst_shard" }
+  ],
+  "result": { "id": "dynamicmagic:water_grimoire", "count": 1 }
+}

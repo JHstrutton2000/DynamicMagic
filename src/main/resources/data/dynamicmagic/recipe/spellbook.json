@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "RAR",
+    "EBE",
+    "RCR"
+  ],
+  "key": {
+    "R": { "item": "minecraft:redstone" },
+    "A": { "item": "minecraft:amethyst_shard" },
+    "E": { "item": "minecraft:ender_pearl" },
+    "B": { "item": "minecraft:book" },
+    "C": { "item": "minecraft:comparator" }
+  },
+  "result": { "id": "dynamicmagic:spellbook", "count": 1 }
+}

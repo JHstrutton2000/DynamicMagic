@@ -1,0 +1,21 @@
+package com.strutton.dynamicmagic.client;
+
+import com.strutton.dynamicmagic.network.OpenSpellbookPayload;
+import com.strutton.dynamicmagic.network.ManaSyncPayload;
+import com.strutton.dynamicmagic.network.OpenEntityStoragePayload;
+import net.minecraft.client.Minecraft;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+
+public final class ClientPayloadHandler {
+    private ClientPayloadHandler() {}
+    public static void openSpellbook(OpenSpellbookPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> ClientSpellbook.open(payload.snapshot(), new com.strutton.dynamicmagic.magic.CasterStats(payload.control(), payload.efficiency()),
+                payload.savedSpells(), payload.editingSpell(), payload.forceCaps()));
+    }
+    public static void syncMana(ManaSyncPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> ClientManaState.update(payload.current(), payload.maximum(), payload.unlimited()));
+    }
+    public static void openEntityStorage(OpenEntityStoragePayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> Minecraft.getInstance().setScreen(new EntityStorageScreen(payload.names())));
+    }
+}
