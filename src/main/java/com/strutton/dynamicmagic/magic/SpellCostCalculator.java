@@ -4,6 +4,8 @@ package com.strutton.dynamicmagic.magic;
 public final class SpellCostCalculator {
     private SpellCostCalculator() {}
     public static SpellCost calculate(SpellDefinition spell, CasterStats caster) {
+        if (spell.effects().stream().allMatch(effect -> effect.magnitude() <= 1.0e-9))
+            return new SpellCost(0, 0, 0, 0);
         double formation = 0, upkeep = 0, release = 0, totalComplexity = 0;
         for (SpellEffect effect : spell.effects()) {
             double base = Math.pow(effect.magnitude(), 1.12)

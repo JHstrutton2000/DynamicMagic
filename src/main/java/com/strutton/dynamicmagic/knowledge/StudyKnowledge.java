@@ -13,41 +13,41 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.EntityType;
 
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.stream.Collectors;
 
-/** Player-specific, per-subject study cooldowns. There is deliberately no global cooldown. */
+/** Player-specific, per-element study cooldowns. There is deliberately no global cooldown. */
 public final class StudyKnowledge {
     private static final String COOLDOWNS = "DynamicMagicStudyCooldowns";
-    private static final long SUBJECT_COOLDOWN = 1_200;
+    public static final long ELEMENT_COOLDOWN_TICKS = 12_000;
     private static final String ENDERMAN_STUDY = "DynamicMagicEndermanStudy";
     private static final double ENDERMAN_BREAKTHROUGH = 64.0;
     private StudyKnowledge() {}
 
     public static boolean studyBlock(ServerPlayer player, ServerLevel level, BlockPos pos,
                                      Element observed, double power) {
-        String subject = "b_" + Integer.toHexString(level.dimension().location().hashCode()) + '_'
-                + Long.toUnsignedString(pos.asLong(), 36) + '_' + observed.name();
-        if (!begin(player, subject, level.getGameTime())) return false;
+        if (beginElements(player, Set.of(observed), level.getGameTime()).isEmpty()) return false;
         ComponentKnowledge.studyElement(player, observed, power);
         return true;
     }
 
     public static boolean studyEntity(ServerPlayer player, LivingEntity target, Element observed, double power) {
         DragonProfile dragon = DragonIntegration.profile(target);
-        String variation = dragon.dragon() ? dragon.lifeStage() + '_' + dragon.elements() : observed.name();
-        String subject = "e_" + target.getUUID().toString().replace("-", "") + '_'
-                + Integer.toHexString(variation.hashCode());
-        if (!begin(player, subject, player.serverLevel().getGameTime())) return false;
         if (target.getType() == EntityType.ENDERMAN) {
+            if (beginElements(player, Set.of(Element.SPACE), player.serverLevel().getGameTime()).isEmpty()) return false;
             studyEnderman(player, power);
             return true;
         }
         if (!dragon.dragon()) {
+            if (beginElements(player, Set.of(observed), player.serverLevel().getGameTime()).isEmpty()) return false;
             ComponentKnowledge.studyElement(player, observed, power);
             return true;
         }
+        EnumSet<Element> available = beginElements(player, dragon.elements(), player.serverLevel().getGameTime());
+        if (available.isEmpty()) return false;
         double dividedPower = power / Math.max(1, dragon.elements().size());
-        for (Element element : dragon.elements()) ComponentKnowledge.studyElement(player, element, dividedPower);
+        for (Element element : available) ComponentKnowledge.studyElement(player, element, dividedPower);
         DragonProgression.study(player, dragon, power);
         String elements = dragon.elements().stream().map(Element::displayName).sorted().collect(Collectors.joining(", "));
         String weaknesses = dragon.weaknesses().stream().map(Element::displayName).sorted().collect(Collectors.joining(", "));
@@ -86,18 +86,44 @@ public final class StudyKnowledge {
                 .withStyle(ChatFormatting.AQUA), true);
     }
 
-    private static boolean begin(ServerPlayer player, String subject, long now) {
+    public static long cooldownRemaining(ServerPlayer player, Element element) {
+        return Math.max(0, player.getPersistentData().getCompound(COOLDOWNS)
+                .getLong(key(element)) - player.serverLevel().getGameTime());
+    }
+
+    private static EnumSet<Element> beginElements(ServerPlayer player, Set<Element> elements, long now) {
         CompoundTag cooldowns = player.getPersistentData().getCompound(COOLDOWNS).copy();
-        if (cooldowns.getLong(subject) > now) {
-            player.displayClientMessage(Component.literal("This subject has nothing new to reveal yet.")
-                    .withStyle(ChatFormatting.GRAY), true);
-            return false;
+        EnumSet<Element> available = EnumSet.noneOf(Element.class);
+        long soonest = Long.MAX_VALUE;
+        for (Element element : elements) {
+            long readyAt = cooldowns.getLong(key(element));
+            if (readyAt <= now) available.add(element);
+            else soonest = Math.min(soonest, readyAt);
+        }
+        if (available.isEmpty()) {
+            long seconds = Math.max(1, (soonest - now + 19) / 20);
+            player.displayClientMessage(Component.literal("You must wait " + formatDuration(seconds)
+                    + " before studying " + elementNames(elements) + " again.")
+                    .withStyle(ChatFormatting.GRAY), false);
+            return available;
         }
         if (cooldowns.size() > 512)
             for (String key : java.util.List.copyOf(cooldowns.getAllKeys()))
                 if (cooldowns.getLong(key) <= now) cooldowns.remove(key);
-        cooldowns.putLong(subject, now + SUBJECT_COOLDOWN);
+        for (Element element : available) cooldowns.putLong(key(element), now + ELEMENT_COOLDOWN_TICKS);
         player.getPersistentData().put(COOLDOWNS, cooldowns);
-        return true;
+        return available;
+    }
+
+    private static String key(Element element) { return "element_" + element.name(); }
+
+    private static String elementNames(Set<Element> elements) {
+        return elements.stream().map(Element::displayName).sorted().collect(Collectors.joining("/"));
+    }
+
+    private static String formatDuration(long seconds) {
+        long minutes = seconds / 60;
+        long remainder = seconds % 60;
+        return minutes > 0 ? minutes + "m " + remainder + "s" : remainder + "s";
     }
 }

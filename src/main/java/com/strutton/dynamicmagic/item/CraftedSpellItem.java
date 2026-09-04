@@ -98,7 +98,7 @@ public final class CraftedSpellItem extends Item {
         boolean heldLift = isHeldLift(spell);
         if (spell.delivery() == DeliveryType.CONTINUOUS && usedTicks >= (heldLift ? 1 : 10)
                 && (heldLift || usedTicks % 8 == 0)) {
-            double pulseCost = Math.max(0.25, cost.release() * 0.22);
+            double pulseCost = spell.isStudyOnly() ? 0 : Math.max(0.25, cost.release() * 0.22);
             if (usedTicks % 8 != 0 || Mana.consume(player, pulseCost)) {
                 SpellExecutor.cast(player, spell, chargeMultiplier(usedTicks) * .65);
                 if (usedTicks % 40 == 0) completedCast(player, spell, cost);
@@ -197,13 +197,15 @@ public final class CraftedSpellItem extends Item {
     }
 
     private static void completedCast(ServerPlayer player, CraftedSpell spell, SpellCost cost) {
+        if (spell.isStudyOnly()) return;
         ComponentKnowledge.recordSuccessfulCast(player, spell);
         ProjectileAccuracy.practice(player, spell);
         CasterMastery.practice(player, spell.definition(), cost.instability());
         double complexity = spell.definition().effects().size() * .2 / spell.allInstructions().size();
         for (SpellInstruction instruction : spell.allInstructions())
-            ElementMastery.practice(player, instruction.element(), complexity
-                    + instruction.power() * instruction.repetitions() * .1);
+            if (instruction.impact() != ImpactType.STUDY)
+                ElementMastery.practice(player, instruction.element(), complexity
+                        + instruction.power() * instruction.repetitions() * .1);
     }
 
     private static boolean isHeldLift(CraftedSpell spell) {

@@ -250,18 +250,22 @@ public final class MagicGameTests {
     }
 
     @GameTest(template = "empty", timeoutTicks = 20)
-    public static void studyCooldownIsPerSubjectAndLifeObservation(GameTestHelper helper) {
+    public static void studyCooldownIsPerElementAndLifeObservation(GameTestHelper helper) {
         ServerPlayer caster = helper.makeMockServerPlayerInLevel();
         BlockPos water = new BlockPos(1, 1, 1);
+        BlockPos otherWater = new BlockPos(3, 1, 1);
         BlockPos lava = new BlockPos(2, 1, 1);
         helper.assertTrue(StudyKnowledge.studyBlock(caster, caster.serverLevel(), water, Element.WATER, 1),
-                "First study of a subject was rejected");
-        helper.assertTrue(!StudyKnowledge.studyBlock(caster, caster.serverLevel(), water, Element.WATER, 1),
-                "Repeated study ignored its per-subject cooldown");
+                "First study of an element was rejected");
+        helper.assertTrue(StudyKnowledge.cooldownRemaining(caster, Element.WATER)
+                        == StudyKnowledge.ELEMENT_COOLDOWN_TICKS,
+                "Element study did not start the full ten-minute cooldown");
+        helper.assertTrue(!StudyKnowledge.studyBlock(caster, caster.serverLevel(), otherWater, Element.WATER, 1),
+                "A different block bypassed the per-element cooldown");
         helper.assertTrue(StudyKnowledge.studyBlock(caster, caster.serverLevel(), lava, Element.LAVA, 1),
-                "Studying one subject incorrectly blocked a different element");
+                "Studying one element incorrectly blocked a different element");
         helper.assertTrue(StudyKnowledge.studyBlock(caster, caster.serverLevel(), water, Element.ICE, 1),
-                "A changed observation at the same position was treated as the old subject");
+                "A different element at the same position was incorrectly blocked");
         helper.succeed();
     }
 

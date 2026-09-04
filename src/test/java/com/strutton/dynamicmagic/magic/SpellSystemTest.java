@@ -79,6 +79,17 @@ class SpellSystemTest {
         assertTrue(flyingBoss > hostile * 4);
     }
 
+    @Test void studyMagicIsAlwaysFree() {
+        CraftedSpell study = new CraftedSpell("Study Element", SourceType.CREATE, Element.ARCANE,
+                SpellForm.BOLT, DeliveryType.PROJECTILE, ImpactType.STUDY, 10);
+        SpellCost cost = SpellCostCalculator.calculate(study.definition(), CASTER);
+        assertTrue(study.isStudyOnly());
+        assertEquals(0, cost.formation());
+        assertEquals(0, cost.maintenancePerSecond());
+        assertEquals(0, cost.release());
+        assertEquals(0, cost.instability());
+    }
+
     private static SpellInstruction operation(Element element, ImpactType impact, TargetMode target) {
         return new SpellInstruction(element, impact, 1, CastDirection.UP, target,
                 PhysicsOperation.ADD_VELOCITY, 8, 0, 2, 1);

@@ -94,19 +94,23 @@ public record CraftedSpell(
 
     public SpellDefinition definition() {
         List<SpellEffect> effects = new ArrayList<>();
-        List<SpellInstruction> operations = allInstructions();
+        List<SpellInstruction> operations = allInstructions().stream()
+                .filter(instruction -> instruction.impact() != ImpactType.STUDY).toList();
+        if (operations.isEmpty())
+            return new SpellDefinition(name, List.of(new SpellEffect(EffectType.CREATE, element, 0, 0)));
         double totalForce = operations.stream().mapToDouble(instruction -> instruction.power() * instruction.repetitions()).sum();
         for (SpellInstruction instruction : operations)
             effects.add(new SpellEffect(source == SourceType.SUMMON ? EffectType.SUMMON_ELEMENT : EffectType.CREATE,
                     instruction.element(), instruction.power() * instruction.repetitions()
                     * (source == SourceType.SUMMON ? 2.5 : 3.5), 0.25));
-        effects.add(new SpellEffect(EffectType.SHAPE, element, totalForce * formMagnitude(), formComplexity()));
+        Element costingElement = operations.get(0).element();
+        effects.add(new SpellEffect(EffectType.SHAPE, costingElement, totalForce * formMagnitude(), formComplexity()));
         if (form == SpellForm.SHIELD || form == SpellForm.WEAPON) {
             effects.add(new SpellEffect(EffectType.CONSTRUCT, element, totalForce * 2.5, 0.55));
             effects.add(new SpellEffect(EffectType.MAINTAIN, element, totalForce, 0.25));
         }
         effects.add(new SpellEffect(delivery == DeliveryType.CONTINUOUS ? EffectType.REPEAT : EffectType.PROJECT,
-                element, totalForce * deliveryMagnitude(), deliveryComplexity()));
+                costingElement, totalForce * deliveryMagnitude(), deliveryComplexity()));
         for (SpellInstruction instruction : operations) {
             double spatialLoad = 1 + instruction.range() / 40.0 + instruction.radius() / 8.0;
             double temporalLoad = 1 + instruction.durationSeconds() / 20.0;
@@ -134,11 +138,16 @@ public record CraftedSpell(
                 effects.add(new SpellEffect(EffectType.CONDITIONAL, Element.ARCANE, 2, .65));
                 effects.add(new SpellEffect(EffectType.PROGRAM, Element.ARCANE, Math.max(1, 20.0 / branch.intervalTicks()), .8));
                 for (SpellInstruction instruction : branch.instructions())
-                    effects.add(new SpellEffect(EffectType.MAINTAIN, instruction.element(),
-                            Math.max(1, instruction.power() * instruction.repetitions() * .5), .35));
+                    if (instruction.impact() != ImpactType.STUDY)
+                        effects.add(new SpellEffect(EffectType.MAINTAIN, instruction.element(),
+                                Math.max(1, instruction.power() * instruction.repetitions() * .5), .35));
             }
         }
         return new SpellDefinition(name, effects);
+    }
+
+    public boolean isStudyOnly() {
+        return allInstructions().stream().allMatch(instruction -> instruction.impact() == ImpactType.STUDY);
     }
 
     public void writeTo(ItemStack stack) {
