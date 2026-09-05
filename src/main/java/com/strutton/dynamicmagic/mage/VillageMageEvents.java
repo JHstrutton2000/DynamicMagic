@@ -114,6 +114,7 @@ public final class VillageMageEvents {
 
     public static void inheritAsNecromancer(Villager mage, ZombieVillager necromancer) {
         if (!isMage(mage)) return;
+        MageMerchant.copyPriceProfile(mage, necromancer);
         long elements = mage.getPersistentData().getLong(ELEMENTS) | bit(Element.UNDEAD);
         necromancer.getPersistentData().putLong(ELEMENTS, elements);
         necromancer.getPersistentData().putLong(SKILLS, mage.getPersistentData().getLong(SKILLS));
@@ -142,7 +143,8 @@ public final class VillageMageEvents {
     }
 
     @SubscribeEvent public static void onJoin(EntityJoinLevelEvent event) {
-        if (event.getLevel().isClientSide() || isSpecialist(event.getEntity())) return;
+        if (event.getLevel().isClientSide() || isSpecialist(event.getEntity())
+                || event.getEntity() instanceof LivingEntity living && MorphMageEvents.isMorphMage(living)) return;
         if (event.getEntity() instanceof Villager villager
                 && !villager.getPersistentData().getBoolean(SPECIALIST_CHECKED)) {
             villager.getPersistentData().putBoolean(SPECIALIST_CHECKED, true);

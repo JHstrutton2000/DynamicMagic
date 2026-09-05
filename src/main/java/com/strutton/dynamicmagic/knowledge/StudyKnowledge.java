@@ -12,6 +12,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.block.Blocks;
 
 import java.util.EnumSet;
 import java.util.Set;
@@ -29,6 +30,18 @@ public final class StudyKnowledge {
                                      Element observed, double power) {
         if (beginElements(player, Set.of(observed), level.getGameTime()).isEmpty()) return false;
         ComponentKnowledge.studyElement(player, observed, power);
+        return true;
+    }
+
+    public static boolean studyPortal(ServerPlayer player, ServerLevel level, BlockPos pos, double power) {
+        if (beginElements(player, Set.of(Element.SPACE), level.getGameTime()).isEmpty()) return false;
+        var state = level.getBlockState(pos);
+        double resonance = Math.max(.5, power) * (state.is(Blocks.END_GATEWAY) ? 5
+                : state.is(Blocks.END_PORTAL) ? 4 : state.is(Blocks.NETHER_PORTAL) ? 2 : 1.5);
+        ComponentKnowledge.studyElement(player, Element.SPACE, resonance);
+        player.displayClientMessage(Component.literal(String.format(java.util.Locale.ROOT,
+                "Portal study: gained %.1f Space insight.", resonance))
+                .withStyle(ChatFormatting.LIGHT_PURPLE), true);
         return true;
     }
 

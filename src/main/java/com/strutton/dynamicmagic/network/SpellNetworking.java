@@ -39,6 +39,8 @@ public final class SpellNetworking {
                 SpellNetworking::handleManaSyncClient);
         registrar.playToClient(OpenEntityStoragePayload.TYPE, OpenEntityStoragePayload.STREAM_CODEC,
                 SpellNetworking::handleOpenEntityStorageClient);
+        registrar.playToClient(MorphMageSyncPayload.TYPE, MorphMageSyncPayload.STREAM_CODEC,
+                SpellNetworking::handleMorphMageSyncClient);
         registrar.playToServer(SummonStoredEntityPayload.TYPE, SummonStoredEntityPayload.STREAM_CODEC,
                 SpellNetworking::handleSummonEntity);
     }
@@ -53,6 +55,10 @@ public final class SpellNetworking {
 
     private static void handleOpenEntityStorageClient(OpenEntityStoragePayload payload, IPayloadContext context) {
         ClientPayloadHandler.openEntityStorage(payload, context);
+    }
+
+    private static void handleMorphMageSyncClient(MorphMageSyncPayload payload, IPayloadContext context) {
+        ClientPayloadHandler.syncMorphMage(payload, context);
     }
 
     private static void handleOpenSpellcraft(OpenSpellcraftRequest payload, IPayloadContext context) {

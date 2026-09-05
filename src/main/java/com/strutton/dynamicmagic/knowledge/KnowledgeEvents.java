@@ -33,6 +33,8 @@ public final class KnowledgeEvents {
             StudyKnowledge.copy(original, replacement);
             com.strutton.dynamicmagic.dragon.DragonProgression.copy(original, replacement);
             com.strutton.dynamicmagic.skill.ExplosionProgression.copy(original, replacement);
+            com.strutton.dynamicmagic.mana.ManaBrewing.copy(original, replacement);
+            com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.copy(original, replacement);
         }
     }
 

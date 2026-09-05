@@ -11,6 +11,34 @@ import com.strutton.dynamicmagic.knowledge.KnowledgeSnapshot;
 class SpellSystemTest {
     private static final CasterStats CASTER = new CasterStats(100, 1);
 
+    @Test void adventRunesMapOnlyToTheirRelevantElement() {
+        var fire = com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.runeAttunement(
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("aoa3", "fire_rune"));
+        var water = com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.runeAttunement(
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("aoa3", "water_rune"));
+        assertNotNull(fire);
+        assertNotNull(water);
+        assertEquals(Element.FIRE, fire.element());
+        assertEquals(Element.WATER, water.element());
+        assertNull(com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.runeAttunement(
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("minecraft", "fire_rune")));
+        assertNull(com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.runeAttunement(
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("aoa3", "unpowered_rune")));
+    }
+
+    @Test void adventStaffManaCostScalesAndElementFallbacksStayThematic() {
+        double cheap = com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.staffManaCost(1, 2);
+        double expensive = com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.staffManaCost(6, 18);
+        assertTrue(expensive > cheap);
+        assertTrue(expensive <= 40);
+        assertEquals(Element.WATER,
+                com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.fallbackStaffElement("aquatic_staff"));
+        assertEquals(Element.LIGHTNING,
+                com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.fallbackStaffElement("striker_staff"));
+        assertEquals(Element.ARCANE,
+                com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.fallbackStaffElement("wizards_staff"));
+    }
+
     @Test void timeManipulationCostsFarMoreThanABasicFireBolt() {
         CraftedSpell fire = new CraftedSpell("Fire", SourceType.CREATE, Element.FIRE,
                 SpellForm.BOLT, DeliveryType.PROJECTILE, ImpactType.DAMAGE, 1);

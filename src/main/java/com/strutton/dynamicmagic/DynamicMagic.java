@@ -7,7 +7,7 @@ import com.strutton.dynamicmagic.item.CraftedSpellItem;
 import com.strutton.dynamicmagic.item.ElementGrimoireItem;
 import com.strutton.dynamicmagic.command.MagicCommands;
 import com.strutton.dynamicmagic.knowledge.KnowledgeEvents;
-import com.strutton.dynamicmagic.knowledge.GrimoireDiscoveryEvents;
+import com.strutton.dynamicmagic.knowledge.ChestGrimoireLootEvents;
 import com.strutton.dynamicmagic.magic.Element;
 import com.strutton.dynamicmagic.time.TimeMagicController;
 import com.strutton.dynamicmagic.mana.ManaEvents;
@@ -43,6 +43,22 @@ public final class DynamicMagic {
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
     public static final DeferredRegister<EntityType<?>> ENTITY_TYPES =
             DeferredRegister.create(Registries.ENTITY_TYPE, MOD_ID);
+    public static final DeferredRegister<net.minecraft.world.item.alchemy.Potion> POTIONS =
+            DeferredRegister.create(Registries.POTION, MOD_ID);
+    public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> MANA_POTION =
+            POTIONS.register("mana", () -> new net.minecraft.world.item.alchemy.Potion());
+    public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> EXPANSION_RESET_POTION =
+            POTIONS.register("expansion_reset", () -> new net.minecraft.world.item.alchemy.Potion());
+    public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> MANA_EXPANSION_1 =
+            POTIONS.register("mana_expansion_1", () -> new net.minecraft.world.item.alchemy.Potion());
+    public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> MANA_EXPANSION_5 =
+            POTIONS.register("mana_expansion_5", () -> new net.minecraft.world.item.alchemy.Potion());
+    public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> MANA_EXPANSION_10 =
+            POTIONS.register("mana_expansion_10", () -> new net.minecraft.world.item.alchemy.Potion());
+    public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> MANA_EXPANSION_25 =
+            POTIONS.register("mana_expansion_25", () -> new net.minecraft.world.item.alchemy.Potion());
+    public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> MANA_EXPANSION_50 =
+            POTIONS.register("mana_expansion_50", () -> new net.minecraft.world.item.alchemy.Potion());
     public static final DeferredHolder<EntityType<?>, EntityType<com.strutton.dynamicmagic.entity.CreeperVillager>> CREEPER_VILLAGER =
             ENTITY_TYPES.register("creeper_villager", () -> EntityType.Builder
                     .of(com.strutton.dynamicmagic.entity.CreeperVillager::new, MobCategory.CREATURE)
@@ -103,6 +119,13 @@ public final class DynamicMagic {
                         output.accept(FERTILITY_TOME.get());
                         ELEMENT_GRIMOIRES.values().forEach(holder -> output.accept(holder.get()));
                         SKILL_TOMES.values().forEach(holder -> output.accept(holder.get()));
+                        output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(MANA_POTION));
+                        output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(EXPANSION_RESET_POTION));
+                        output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(MANA_EXPANSION_1));
+                        output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(MANA_EXPANSION_5));
+                        output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(MANA_EXPANSION_10));
+                        output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(MANA_EXPANSION_25));
+                        output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(MANA_EXPANSION_50));
                     })
                     .build());
 
@@ -110,6 +133,7 @@ public final class DynamicMagic {
         ITEMS.register(modBus);
         TABS.register(modBus);
         ENTITY_TYPES.register(modBus);
+        POTIONS.register(modBus);
         modBus.addListener((net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) ->
         {
             var attributes = net.minecraft.world.entity.npc.Villager.createAttributes().build();
@@ -120,8 +144,10 @@ public final class DynamicMagic {
         });
         modBus.addListener(SpellNetworking::register);
         NeoForge.EVENT_BUS.register(ManaEvents.class);
+        NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.mana.ManaMendingEvents.class);
+        NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.mana.ManaBrewing.class);
         NeoForge.EVENT_BUS.register(KnowledgeEvents.class);
-        NeoForge.EVENT_BUS.register(GrimoireDiscoveryEvents.class);
+        NeoForge.EVENT_BUS.register(ChestGrimoireLootEvents.class);
         NeoForge.EVENT_BUS.register(MagicCommands.class);
         NeoForge.EVENT_BUS.register(TimeMagicController.class);
         NeoForge.EVENT_BUS.register(SkillEvents.class);
@@ -129,9 +155,12 @@ public final class DynamicMagic {
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.magic.RuneMagicController.class);
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.vampire.VampireEvents.class);
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.mage.VillageMageEvents.class);
+        NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.mage.MorphMageEvents.class);
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.dragon.DragonEvents.class);
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.werewolf.WerewolfEvents.class);
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.skill.ExplosionProgression.class);
+        if (net.neoforged.fml.ModList.get().isLoaded("aoa3"))
+            NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.class);
         if (net.neoforged.fml.ModList.get().isLoaded("morph")) {
             NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.morph.MorphV2Integration.class);
             com.strutton.dynamicmagic.morph.MorphV2Integration.registerMorphEvent(NeoForge.EVENT_BUS);

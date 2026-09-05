@@ -95,6 +95,14 @@ A composable magic system governed by mana, control, formation, maintenance, and
     ordering="AFTER"
     side="BOTH"
 
+[[dependencies.${mod_id}]]
+    modId="aoa3"
+    type="optional"
+    reason="Makes Advent of Ascension staves consume mana and lets players absorb runes."
+    versionRange="[3.7.16,)"
+    ordering="AFTER"
+    side="BOTH"
+
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't
 # stop your mod loading on the server for example.

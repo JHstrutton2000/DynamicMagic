@@ -31,6 +31,25 @@ public final class MagicGameTests {
     private MagicGameTests() {}
 
     @GameTest(template = "empty", timeoutTicks = 20)
+    public static void tenAoARunesTeachOnlyTheirAttunedElement(GameTestHelper helper) {
+        ServerPlayer caster = helper.makeMockServerPlayerInLevel();
+        for (int i = 0; i < 9; i++)
+            helper.assertTrue(!com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration
+                            .recordRuneStudy(caster, Element.ARCANE),
+                    "Arcane was learned before ten absorbed runes");
+        helper.assertTrue(!ElementKnowledge.knows(caster, Element.ARCANE),
+                "Nine absorbed runes incorrectly taught Arcane");
+        helper.assertTrue(com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration
+                        .recordRuneStudy(caster, Element.ARCANE),
+                "The tenth absorbed rune did not trigger an Arcane breakthrough");
+        helper.assertTrue(ElementKnowledge.knows(caster, Element.ARCANE),
+                "The Arcane breakthrough did not persist elemental knowledge");
+        helper.assertTrue(!ElementKnowledge.knows(caster, Element.TIME),
+                "Arcane rune study incorrectly taught an unrelated element");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
     public static void divineHealAndCleanseAreSeparate(GameTestHelper helper) {
         ServerPlayer caster = helper.makeMockServerPlayerInLevel();
         Cow target = helper.spawn(EntityType.COW, new BlockPos(2, 2, 2));
@@ -270,6 +289,27 @@ public final class MagicGameTests {
     }
 
     @GameTest(template = "empty", timeoutTicks = 20)
+    public static void portalsTeachSpaceAndUseItsStudyCooldown(GameTestHelper helper) {
+        ServerPlayer caster = helper.makeMockServerPlayerInLevel();
+        BlockPos portal = helper.absolutePos(new BlockPos(2, 1, 2));
+        helper.getLevel().setBlockAndUpdate(portal, Blocks.NETHER_PORTAL.defaultBlockState());
+        helper.assertTrue(SpellExecutor.isPortal(helper.getLevel().getBlockState(portal)),
+                "Nether portal was not recognized as a study subject");
+        helper.assertTrue(SpellExecutor.observedElement(helper.getLevel().getBlockState(portal)) == Element.SPACE,
+                "Portal study was assigned to an unrelated element");
+        helper.assertTrue(StudyKnowledge.studyPortal(caster, caster.serverLevel(), portal, 1),
+                "First portal study was rejected");
+        helper.assertTrue(StudyKnowledge.cooldownRemaining(caster, Element.SPACE)
+                        == StudyKnowledge.ELEMENT_COOLDOWN_TICKS,
+                "Portal study did not start the Space study cooldown");
+        helper.assertTrue(!StudyKnowledge.studyPortal(caster, caster.serverLevel(), portal, 1),
+                "The same portal could be studied repeatedly during cooldown");
+        helper.assertTrue(StudyKnowledge.cooldownRemaining(caster, Element.EARTH) == 0,
+                "Portal study incorrectly started the Earth cooldown");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
     public static void enderDragonUsesResistanceAndOpposingElementRules(GameTestHelper helper) {
         ServerPlayer caster = helper.makeMockServerPlayerInLevel();
         var dragon = EntityType.ENDER_DRAGON.create(caster.serverLevel());
@@ -493,6 +533,156 @@ public final class MagicGameTests {
                 "Strong Ice footing magic did not react with water");
         helper.assertTrue(helper.getLevel().getBlockState(footing).is(Blocks.ICE),
                 "Ice footing magic did not make a frozen bridge");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void manaMendingConsumesManaAndRepairsDurability(GameTestHelper helper) {
+        ServerPlayer caster = helper.makeMockServerPlayerInLevel();
+        var enchantment = caster.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+                .getHolderOrThrow(com.strutton.dynamicmagic.mana.ManaMendingEvents.MANA_MENDING);
+        var sword = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_SWORD);
+        sword.enchant(enchantment, 1);
+        sword.setDamageValue(5);
+        caster.getInventory().setItem(0, sword);
+        com.strutton.dynamicmagic.mana.Mana.set(caster, 10);
+
+        helper.assertTrue(com.strutton.dynamicmagic.mana.ManaMendingEvents.repairOne(caster),
+                "Mana Mending did not repair an enchanted damaged item");
+        helper.assertTrue(caster.getInventory().getItem(0).getDamageValue() == 4,
+                "Mana Mending did not repair exactly one durability per pulse");
+        helper.assertTrue(Math.abs(com.strutton.dynamicmagic.mana.Mana.get(caster) - 9) < 1.0e-6,
+                "Mana Mending did not consume exactly one mana per durability");
+
+        com.strutton.dynamicmagic.mana.Mana.set(caster, 0);
+        helper.assertTrue(!com.strutton.dynamicmagic.mana.ManaMendingEvents.repairOne(caster),
+                "Mana Mending repaired an item without enough mana");
+        helper.assertTrue(caster.getInventory().getItem(0).getDamageValue() == 4,
+                "Insufficient mana changed item durability");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void manaBrewingPausesCompletesAndProgresses(GameTestHelper helper) {
+        ServerPlayer caster = helper.makeMockServerPlayerInLevel();
+        for (var ingredient : java.util.List.of(net.minecraft.world.item.Items.AMETHYST_SHARD,
+                net.minecraft.world.item.Items.CLOCK, net.minecraft.world.item.Items.GOLD_INGOT,
+                net.minecraft.world.item.Items.DIAMOND, net.minecraft.world.item.Items.EMERALD_BLOCK,
+                net.minecraft.world.item.Items.NETHER_STAR, net.minecraft.world.item.Items.DRAGON_EGG))
+            helper.assertTrue(helper.getLevel().potionBrewing().isIngredient(new net.minecraft.world.item.ItemStack(ingredient)),
+                    "A mana-brewing catalyst cannot be placed in the brewing stand: " + ingredient);
+        BlockPos relative = new BlockPos(2, 1, 2);
+        BlockPos absolute = helper.absolutePos(relative);
+        helper.setBlock(relative, Blocks.BREWING_STAND);
+        var stand = (net.minecraft.world.level.block.entity.BrewingStandBlockEntity)
+                helper.getLevel().getBlockEntity(absolute);
+        stand.setItem(0, net.minecraft.world.item.alchemy.PotionContents.createItemStack(
+                net.minecraft.world.item.Items.POTION, net.minecraft.world.item.alchemy.Potions.AWKWARD));
+        stand.setItem(3, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.AMETHYST_SHARD));
+
+        com.strutton.dynamicmagic.mana.Mana.set(caster, 0);
+        helper.assertTrue(!com.strutton.dynamicmagic.mana.ManaBrewing.processStand(caster, stand),
+                "Mana brewing progressed without mana");
+        helper.assertTrue(stand.getItem(0).get(net.minecraft.core.component.DataComponents.POTION_CONTENTS)
+                        .is(net.minecraft.world.item.alchemy.Potions.AWKWARD),
+                "A paused brew changed its potion input");
+
+        com.strutton.dynamicmagic.mana.Mana.set(caster, 100);
+        for (int pulse = 0; pulse < 60; pulse++)
+            helper.assertTrue(com.strutton.dynamicmagic.mana.ManaBrewing.processStand(caster, stand),
+                    "Mana brew unexpectedly stopped with enough mana");
+        var brewed = stand.getItem(0).get(net.minecraft.core.component.DataComponents.POTION_CONTENTS);
+        helper.assertTrue(brewed != null && brewed.is(DynamicMagic.MANA_POTION),
+                "Mana brewing did not create a Mana Potion");
+        helper.assertTrue(com.strutton.dynamicmagic.skill.SkillKnowledge.knows(caster,
+                        com.strutton.dynamicmagic.skill.MagicSkill.MANA_BREWING),
+                "Completing the first brew did not unlock Mana Brewing");
+        helper.assertTrue(com.strutton.dynamicmagic.mana.ManaBrewing.mastery(caster) > 0,
+                "Completing a brew did not increase brewing mastery");
+        helper.assertTrue(Math.abs(com.strutton.dynamicmagic.mana.Mana.get(caster) - 40) < 1.0e-5,
+                "The basic Mana Potion brew did not drain its configured mana total");
+
+        com.strutton.dynamicmagic.mana.Mana.set(caster, 0);
+        helper.assertTrue(com.strutton.dynamicmagic.mana.ManaBrewing.applyPotion(caster, DynamicMagic.MANA_POTION),
+                "Mana Potion was not recognized when consumed");
+        helper.assertTrue(Math.abs(com.strutton.dynamicmagic.mana.Mana.get(caster) - 35) < 1.0e-5,
+                "Mana Potion did not restore 35% of maximum mana");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void manaExpansionPotionsGrowPoolAndResetTimeout(GameTestHelper helper) {
+        ServerPlayer caster = helper.makeMockServerPlayerInLevel();
+        com.strutton.dynamicmagic.mana.Mana.set(caster, 1);
+        com.strutton.dynamicmagic.mana.Mana.consume(caster, 1);
+        helper.assertTrue(com.strutton.dynamicmagic.mana.Mana.expansionCooldownRemainingTicks(caster) > 0,
+                "Mana exhaustion did not establish an expansion timeout");
+        helper.assertTrue(com.strutton.dynamicmagic.mana.ManaBrewing.applyPotion(caster,
+                        DynamicMagic.EXPANSION_RESET_POTION),
+                "Expansion Reset Potion was not recognized");
+        helper.assertTrue(com.strutton.dynamicmagic.mana.Mana.expansionCooldownRemainingTicks(caster) == 0,
+                "Expansion Reset Potion did not clear the timeout");
+
+        double before = com.strutton.dynamicmagic.mana.Mana.max(caster);
+        helper.assertTrue(com.strutton.dynamicmagic.mana.ManaBrewing.applyPotion(caster,
+                        DynamicMagic.MANA_EXPANSION_50),
+                "50% Mana Expansion Potion was not recognized");
+        helper.assertTrue(Math.abs(com.strutton.dynamicmagic.mana.Mana.max(caster) - before * 1.5) < 1.0e-5,
+                "50% Mana Expansion Potion did not increase maximum mana by exactly 50%");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void manaBrewsShareDurationButExpensiveBrewsPause(GameTestHelper helper) {
+        ServerPlayer caster = helper.makeMockServerPlayerInLevel();
+        int expected = com.strutton.dynamicmagic.mana.ManaBrewing.requiredSeconds(caster,
+                com.strutton.dynamicmagic.mana.ManaBrewing.recipe("mana"));
+        for (String id : java.util.List.of("reset", "expand_1", "expand_5", "expand_10", "expand_25", "expand_50"))
+            helper.assertTrue(com.strutton.dynamicmagic.mana.ManaBrewing.requiredSeconds(caster,
+                            com.strutton.dynamicmagic.mana.ManaBrewing.recipe(id)) == expected,
+                    "Mana brew recipes did not share the same base duration: " + id);
+
+        BlockPos relative = new BlockPos(2, 1, 2);
+        helper.setBlock(relative, Blocks.BREWING_STAND);
+        var stand = (net.minecraft.world.level.block.entity.BrewingStandBlockEntity)
+                helper.getLevel().getBlockEntity(helper.absolutePos(relative));
+        stand.setItem(0, net.minecraft.world.item.alchemy.PotionContents.createItemStack(
+                net.minecraft.world.item.Items.POTION, net.minecraft.world.item.alchemy.Potions.AWKWARD));
+        stand.setItem(3, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.DRAGON_EGG));
+        com.strutton.dynamicmagic.mana.Mana.set(caster, 100);
+        helper.assertTrue(com.strutton.dynamicmagic.mana.ManaBrewing.processStand(caster, stand),
+                "An expensive brew did not begin with enough mana for one pulse");
+        helper.assertTrue(!com.strutton.dynamicmagic.mana.ManaBrewing.processStand(caster, stand),
+                "An expensive brew did not pause to wait for naturally regenerating mana");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void morphMagesPreserveTradesAndRevealNoName(GameTestHelper helper) {
+        var villager = net.minecraft.world.entity.EntityType.VILLAGER.create(helper.getLevel());
+        villager.getOffers().add(new net.minecraft.world.item.trading.MerchantOffer(
+                new net.minecraft.world.item.trading.ItemCost(net.minecraft.world.item.Items.WHEAT, 1),
+                new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.EMERALD), 4, 1, 0));
+        helper.assertTrue(com.strutton.dynamicmagic.mage.MorphMageEvents.makeMorphMage(villager),
+                "A generic villager could not become a morph mage");
+        helper.assertTrue(villager.getCustomName() == null, "Morph mage received an identifying name");
+        var offers = com.strutton.dynamicmagic.mage.MorphMageEvents.offers(villager);
+        helper.assertTrue(offers.size() == 2, "Morph mage did not preserve its original trade");
+        helper.assertTrue(offers.stream().anyMatch(offer -> offer.getResult().is(
+                        DynamicMagic.SKILL_TOMES.get(com.strutton.dynamicmagic.skill.MagicSkill.MORPHING).get())),
+                "Morph mage did not add the Morphing skill tome trade");
+
+        var skeleton = net.minecraft.world.entity.EntityType.SKELETON.create(helper.getLevel());
+        skeleton.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND,
+                new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.BOW));
+        helper.assertTrue(com.strutton.dynamicmagic.mage.MorphMageEvents.makeMorphMage(skeleton),
+                "A generic skeleton could not become a morph mage");
+        helper.assertTrue(skeleton.getMainHandItem().isEmpty(),
+                "A skeleton morph mage retained the bow that exposes its normal role");
+
+        var wither = net.minecraft.world.entity.EntityType.WITHER.create(helper.getLevel());
+        helper.assertTrue(!com.strutton.dynamicmagic.mage.MorphMageEvents.makeMorphMage(wither),
+                "A boss was allowed to become a morph mage");
         helper.succeed();
     }
 

@@ -321,6 +321,18 @@ public final class MagicCommands {
                     : "MorphV2 is not installed."), false);
             return active ? 1 : 0;
         }));
+        morph.then(Commands.literal("make_mage").requires(source -> source.hasPermission(2)).executes(context -> {
+            ServerPlayer player = context.getSource().getPlayerOrException();
+            var nearest = player.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
+                            player.getBoundingBox().inflate(8), entity ->
+                                    !com.strutton.dynamicmagic.mage.MorphMageEvents.isMorphMage(entity))
+                    .stream().min(java.util.Comparator.comparingDouble(player::distanceToSqr)).orElse(null);
+            boolean changed = nearest != null && com.strutton.dynamicmagic.mage.MorphMageEvents.makeMorphMage(nearest);
+            context.getSource().sendSuccess(() -> Component.literal(changed
+                    ? "The nearest mob is now a disguised morph mage."
+                    : "No eligible non-boss mob was found within eight blocks."), false);
+            return changed ? 1 : 0;
+        }));
         root.then(morph);
         LiteralArgumentBuilder<CommandSourceStack> teleport = Commands.literal("teleport");
         teleport.then(Commands.literal("menu").executes(context -> {
@@ -345,6 +357,44 @@ public final class MagicCommands {
             return (int) progress;
         }));
         root.then(teleport);
+
+        LiteralArgumentBuilder<CommandSourceStack> brewing = Commands.literal("brewing");
+        brewing.then(Commands.literal("status").executes(context -> {
+            ServerPlayer player = context.getSource().getPlayerOrException();
+            double mastery = com.strutton.dynamicmagic.mana.ManaBrewing.mastery(player);
+            int level = com.strutton.dynamicmagic.mana.ManaBrewing.masteryLevel(player);
+            context.getSource().sendSuccess(() -> Component.literal(String.format(java.util.Locale.ROOT,
+                    "Mana Brewing: %s; mastery %.1f (level %d/20); time reduction %.1f%%; mana reduction %.1f%%.",
+                    SkillKnowledge.knows(player, MagicSkill.MANA_BREWING) ? "learned" : "undiscovered",
+                    mastery, level, level * 2.5, level * 2.0)), false);
+            return level;
+        }));
+        brewing.then(Commands.literal("mastery").requires(source -> source.hasPermission(2))
+                .then(Commands.argument("value", DoubleArgumentType.doubleArg(0)).executes(context -> {
+                    ServerPlayer player = context.getSource().getPlayerOrException();
+                    double value = DoubleArgumentType.getDouble(context, "value");
+                    com.strutton.dynamicmagic.mana.ManaBrewing.setMastery(player, value);
+                    SkillKnowledge.learn(player, MagicSkill.MANA_BREWING);
+                    int level = com.strutton.dynamicmagic.mana.ManaBrewing.masteryLevel(player);
+                    context.getSource().sendSuccess(() -> Component.literal(String.format(java.util.Locale.ROOT,
+                            "Mana Brewing mastery set to %.1f (level %d/20).", value, level)), false);
+                    return level;
+                })));
+        LiteralArgumentBuilder<CommandSourceStack> giveBrew = Commands.literal("give")
+                .requires(source -> source.hasPermission(2));
+        for (String id : java.util.List.of("mana", "reset", "expand_1", "expand_5", "expand_10", "expand_25", "expand_50")) {
+            giveBrew.then(Commands.literal(id).executes(context -> {
+                ServerPlayer player = context.getSource().getPlayerOrException();
+                var recipe = com.strutton.dynamicmagic.mana.ManaBrewing.recipe(id);
+                var stack = com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(recipe.output());
+                if (!player.getInventory().add(stack)) player.drop(stack, false);
+                context.getSource().sendSuccess(() -> Component.literal("Granted mana-brewing potion: " + id + '.'), false);
+                return 1;
+            }));
+        }
+        brewing.then(giveBrew);
+        root.then(brewing);
+
         LiteralArgumentBuilder<CommandSourceStack> mana = Commands.literal("mana");
         LiteralArgumentBuilder<CommandSourceStack> setMana = Commands.literal("set");
         setMana.then(Commands.literal("unlimited").executes(context -> {

@@ -3,7 +3,9 @@ package com.strutton.dynamicmagic.magic;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.EntityTypeTags;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
@@ -155,7 +157,9 @@ public final class SpellExecutor {
             direction = ProjectileAccuracy.applySpread(player, direction);
         Vec3 rayEnd = start.add(direction.scale(range));
         ClipContext.Fluid fluidMode = isWorldMagic(spell.impact()) ? ClipContext.Fluid.ANY : ClipContext.Fluid.NONE;
-        HitResult hit = level.clip(new ClipContext(start, rayEnd, ClipContext.Block.COLLIDER, fluidMode, player));
+        ClipContext.Block blockMode = spell.impact() == ImpactType.STUDY
+                ? ClipContext.Block.OUTLINE : ClipContext.Block.COLLIDER;
+        HitResult hit = level.clip(new ClipContext(start, rayEnd, blockMode, fluidMode, player));
         EntityHitResult entityHit = ProjectileUtil.getEntityHitResult(level, player, start, rayEnd,
                 player.getBoundingBox().expandTowards(direction.scale(range)).inflate(1),
                 entity -> entity != player && entity.isAlive(), (float) (range * range));
@@ -464,7 +468,10 @@ public final class SpellExecutor {
         BlockPos struck = hit.getBlockPos();
         BlockState state = level.getBlockState(struck);
         if (spell.impact() == ImpactType.STUDY) {
-            com.strutton.dynamicmagic.knowledge.StudyKnowledge.studyBlock(player, level, struck, observedElement(state), power);
+            if (isPortal(state))
+                com.strutton.dynamicmagic.knowledge.StudyKnowledge.studyPortal(player, level, struck, power);
+            else com.strutton.dynamicmagic.knowledge.StudyKnowledge.studyBlock(
+                    player, level, struck, observedElement(state), power);
             return;
         }
         if (spell.impact() == ImpactType.DETECT_ORES) {
@@ -558,7 +565,8 @@ public final class SpellExecutor {
         return state.canBeReplaced() || !state.getFluidState().isEmpty() ? struck : struck.relative(hit.getDirection());
     }
 
-    private static Element observedElement(BlockState state) {
+    static Element observedElement(BlockState state) {
+        if (isPortal(state)) return Element.SPACE;
         if (state.getFluidState().is(FluidTags.WATER)) return Element.WATER;
         if (state.getFluidState().is(FluidTags.LAVA)) return Element.LAVA;
         if (state.is(Blocks.ICE) || state.is(Blocks.PACKED_ICE) || state.is(Blocks.BLUE_ICE)) return Element.ICE;
@@ -569,6 +577,13 @@ public final class SpellExecutor {
         if (id.contains("soul") || id.contains("sculk")) return Element.SPIRIT;
         if (id.contains("lightning_rod")) return Element.LIGHTNING;
         return Element.EARTH;
+    }
+
+    static boolean isPortal(BlockState state) {
+        if (state.is(BlockTags.PORTALS) || state.is(Blocks.NETHER_PORTAL) || state.is(Blocks.END_PORTAL)
+                || state.is(Blocks.END_GATEWAY)) return true;
+        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+        return id != null && id.getPath().contains("portal");
     }
 
     private static Element observedElement(LivingEntity target) {

@@ -50,6 +50,21 @@ public final class Mana {
     }
 
     public static void refill(ServerPlayer player) { if (!isUnlimited(player)) set(player, max(player)); }
+    public static void resetExpansionCooldown(ServerPlayer player) {
+        player.getPersistentData().putLong(EXPANSION_READY_AT, player.serverLevel().getGameTime());
+    }
+    public static long expansionCooldownRemainingTicks(ServerPlayer player) {
+        return Math.max(0, player.getPersistentData().getLong(EXPANSION_READY_AT)
+                - player.serverLevel().getGameTime());
+    }
+    public static double expandByPercent(ServerPlayer player, double percent) {
+        double previousMaximum = max(player);
+        double growth = previousMaximum * Math.max(0, percent) / 100.0;
+        double previousMana = get(player);
+        setMaximum(player, previousMaximum + growth);
+        set(player, previousMana + growth);
+        return growth;
+    }
     public static String display(ServerPlayer player) {
         return isUnlimited(player) ? "∞" : (int) get(player) + "/" + (int) max(player);
     }
@@ -136,8 +151,7 @@ public final class Mana {
     }
 
     private static long expansionCooldownSeconds(ServerPlayer player) {
-        long remainingTicks = Math.max(0, player.getPersistentData().getLong(EXPANSION_READY_AT)
-                - player.serverLevel().getGameTime());
+        long remainingTicks = expansionCooldownRemainingTicks(player);
         return (remainingTicks + 19) / 20;
     }
 

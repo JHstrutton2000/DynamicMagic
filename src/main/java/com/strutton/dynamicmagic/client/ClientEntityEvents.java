@@ -15,4 +15,16 @@ public final class ClientEntityEvents {
         event.registerEntityRenderer(DynamicMagic.ALEX_VILLAGER.get(), AlexVillagerRenderer::new);
         event.registerEntityRenderer(DynamicMagic.SKELETON_MAGE_VILLAGER.get(), SkeletonMageVillagerRenderer::new);
     }
+    @SubscribeEvent public static void addLayers(EntityRenderersEvent.AddLayers event) {
+        for (net.minecraft.world.entity.EntityType<?> type : event.getEntityTypes())
+            addMorphMageEyes(event, type);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void addMorphMageEyes(EntityRenderersEvent.AddLayers event,
+                                         net.minecraft.world.entity.EntityType type) {
+        net.minecraft.client.renderer.entity.EntityRenderer<?> renderer = event.getRenderer(type);
+        if (renderer instanceof net.minecraft.client.renderer.entity.LivingEntityRenderer livingRenderer)
+            livingRenderer.addLayer(new MorphMageEyesLayer(livingRenderer));
+    }
 }

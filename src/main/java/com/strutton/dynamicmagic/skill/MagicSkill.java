@@ -18,7 +18,8 @@ public enum MagicSkill {
     EFFICIENT_STUDY("Efficient Study", "Skill tomes cost 25% less experience to comprehend.", 60),
     EXPLOSION_RESISTANCE("Explosion Resistance", "Take half damage from explosions; surviving blasts develops immunity.", 38),
     EXPLOSION_IMMUNITY("Explosion Immunity", "Explosions cannot damage you.", 70, false),
-    MORPHING("Morphing", "Assume acquired forms by sustaining them with mana.", 58);
+    MORPHING("Morphing", "Assume acquired forms by sustaining them with mana.", 58),
+    MANA_BREWING("Mana Brewing", "Infuse potions with your own mana; mastery reduces time and mana cost.", 40, false);
 
     private final String displayName;
     private final String description;
