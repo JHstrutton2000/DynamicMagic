@@ -571,6 +571,9 @@ public final class MagicGameTests {
                 net.minecraft.world.item.Items.NETHER_STAR, net.minecraft.world.item.Items.DRAGON_EGG))
             helper.assertTrue(helper.getLevel().potionBrewing().isIngredient(new net.minecraft.world.item.ItemStack(ingredient)),
                     "A mana-brewing catalyst cannot be placed in the brewing stand: " + ingredient);
+        var cureIngredient = com.strutton.dynamicmagic.mana.ManaBrewing.recipe("vampire_cure").ingredient();
+        helper.assertTrue(helper.getLevel().potionBrewing().isIngredient(new net.minecraft.world.item.ItemStack(cureIngredient)),
+                "The vampire cure catalyst cannot be placed in the brewing stand: " + cureIngredient);
         BlockPos relative = new BlockPos(2, 1, 2);
         BlockPos absolute = helper.absolutePos(relative);
         helper.setBlock(relative, Blocks.BREWING_STAND);
@@ -637,7 +640,7 @@ public final class MagicGameTests {
         ServerPlayer caster = helper.makeMockServerPlayerInLevel();
         int expected = com.strutton.dynamicmagic.mana.ManaBrewing.requiredSeconds(caster,
                 com.strutton.dynamicmagic.mana.ManaBrewing.recipe("mana"));
-        for (String id : java.util.List.of("reset", "expand_1", "expand_5", "expand_10", "expand_25", "expand_50"))
+        for (String id : java.util.List.of("vampire_cure", "reset", "expand_1", "expand_5", "expand_10", "expand_25", "expand_50"))
             helper.assertTrue(com.strutton.dynamicmagic.mana.ManaBrewing.requiredSeconds(caster,
                             com.strutton.dynamicmagic.mana.ManaBrewing.recipe(id)) == expected,
                     "Mana brew recipes did not share the same base duration: " + id);
@@ -654,6 +657,81 @@ public final class MagicGameTests {
                 "An expensive brew did not begin with enough mana for one pulse");
         helper.assertTrue(!com.strutton.dynamicmagic.mana.ManaBrewing.processStand(caster, stand),
                 "An expensive brew did not pause to wait for naturally regenerating mana");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void vampireCureBrewRequiresAndDrainsVampireBlood(GameTestHelper helper) {
+        ServerPlayer caster = helper.makeMockServerPlayerInLevel();
+        BlockPos relative = new BlockPos(2, 1, 2);
+        helper.setBlock(relative, Blocks.BREWING_STAND);
+        var stand = (net.minecraft.world.level.block.entity.BrewingStandBlockEntity)
+                helper.getLevel().getBlockEntity(helper.absolutePos(relative));
+        stand.setItem(0, net.minecraft.world.item.alchemy.PotionContents.createItemStack(
+                net.minecraft.world.item.Items.POTION, net.minecraft.world.item.alchemy.Potions.AWKWARD));
+        // Game tests run without the optional Vampirism JAR, so this resolves to the internal-vampire fallback.
+        var cureRecipe = com.strutton.dynamicmagic.mana.ManaBrewing.recipe("vampire_cure");
+        stand.setItem(3, new net.minecraft.world.item.ItemStack(cureRecipe.ingredient()));
+        com.strutton.dynamicmagic.mana.Mana.set(caster, 100);
+
+        helper.assertTrue(!com.strutton.dynamicmagic.mana.ManaBrewing.processStand(caster, stand),
+                "A human was able to power a vampire cure brew");
+        com.strutton.dynamicmagic.vampire.Vampirism.infect(caster);
+        caster.getFoodData().setFoodLevel(0);
+        helper.assertTrue(!com.strutton.dynamicmagic.mana.ManaBrewing.processStand(caster, stand),
+                "Vampire cure brewing progressed with no vampire blood");
+        caster.getFoodData().setFoodLevel(6);
+        helper.assertTrue(com.strutton.dynamicmagic.mana.ManaBrewing.processStand(caster, stand),
+                "Vampire cure brewing did not begin with blood and mana available");
+        helper.assertTrue(caster.getFoodData().getFoodLevel() == 5,
+                "Vampire cure brewing did not drain its first blood unit");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void vampireCureSupportPotionsApplyOnlyOnce(GameTestHelper helper) {
+        ServerPlayer caster = helper.makeMockServerPlayerInLevel();
+        com.strutton.dynamicmagic.vampire.Vampirism.infect(caster);
+        caster.getFoodData().setFoodLevel(20);
+        helper.assertTrue(com.strutton.dynamicmagic.vampire.VampireCureTreatment.start(caster),
+                "Vampire cure treatment did not start");
+        var weakness = net.minecraft.world.item.alchemy.PotionContents.createItemStack(
+                net.minecraft.world.item.Items.POTION, net.minecraft.world.item.alchemy.Potions.WEAKNESS)
+                .get(net.minecraft.core.component.DataComponents.POTION_CONTENTS);
+        var regeneration = net.minecraft.world.item.alchemy.PotionContents.createItemStack(
+                net.minecraft.world.item.Items.POTION, net.minecraft.world.item.alchemy.Potions.REGENERATION)
+                .get(net.minecraft.core.component.DataComponents.POTION_CONTENTS);
+        helper.assertTrue(com.strutton.dynamicmagic.vampire.VampireCureTreatment.recordSupportPotion(caster, weakness),
+                "Weakness potion did not strengthen the cure");
+        helper.assertTrue(!com.strutton.dynamicmagic.vampire.VampireCureTreatment.recordSupportPotion(caster, weakness),
+                "A second Weakness potion stacked its cure bonus");
+        helper.assertTrue(com.strutton.dynamicmagic.vampire.VampireCureTreatment.recordSupportPotion(caster, regeneration),
+                "Regeneration potion did not strengthen the cure");
+        helper.assertTrue(!com.strutton.dynamicmagic.vampire.VampireCureTreatment.recordSupportPotion(caster, regeneration),
+                "A second Regeneration potion stacked its cure bonus");
+        helper.assertTrue(Math.abs(com.strutton.dynamicmagic.vampire.VampireCureTreatment.successChance(caster) - .14) < 1.0e-6,
+                "Support potions did not add exactly 14 percentage points in total");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void vampireCureMakesAnimalsFleeAndMobsAttack(GameTestHelper helper) {
+        ServerPlayer caster = helper.makeMockServerPlayerInLevel();
+        com.strutton.dynamicmagic.vampire.Vampirism.infect(caster);
+        var cow = net.minecraft.world.entity.EntityType.COW.create(helper.getLevel());
+        var zombie = net.minecraft.world.entity.EntityType.ZOMBIE.create(helper.getLevel());
+        helper.assertTrue(cow != null && zombie != null, "Could not create cure-aura test mobs");
+        cow.setPos(caster.getX() + 2, caster.getY(), caster.getZ());
+        zombie.setPos(caster.getX() + 4, caster.getY(), caster.getZ());
+        helper.getLevel().addFreshEntity(cow);
+        helper.getLevel().addFreshEntity(zombie);
+        com.strutton.dynamicmagic.vampire.VampireCureTreatment.influenceNearbyMobs(caster);
+        helper.assertTrue(cow.getPersistentData().hasUUID("DynamicMagicVampireCureForcedFlee"),
+                "The cure did not force a nearby animal to flee");
+        helper.assertTrue(cow.getTarget() == null, "The cure made an animal attack instead of flee");
+        helper.assertTrue(zombie.getTarget() == caster, "The cure did not provoke a nearby hostile mob");
+        helper.assertTrue(zombie.getPersistentData().hasUUID("DynamicMagicVampireCureForcedTarget"),
+                "The cure did not mark its forced hostile target for later release");
         helper.succeed();
     }
 

@@ -382,7 +382,7 @@ public final class MagicCommands {
                 })));
         LiteralArgumentBuilder<CommandSourceStack> giveBrew = Commands.literal("give")
                 .requires(source -> source.hasPermission(2));
-        for (String id : java.util.List.of("mana", "reset", "expand_1", "expand_5", "expand_10", "expand_25", "expand_50")) {
+        for (String id : java.util.List.of("mana", "vampire_cure", "reset", "expand_1", "expand_5", "expand_10", "expand_25", "expand_50")) {
             giveBrew.then(Commands.literal(id).executes(context -> {
                 ServerPlayer player = context.getSource().getPlayerOrException();
                 var recipe = com.strutton.dynamicmagic.mana.ManaBrewing.recipe(id);

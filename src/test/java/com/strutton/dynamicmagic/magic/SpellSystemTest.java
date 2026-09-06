@@ -118,6 +118,24 @@ class SpellSystemTest {
         assertEquals(0, cost.instability());
     }
 
+    @Test void vampireCureOddsRewardSunlightAndBloodHunger() {
+        assertEquals(0, com.strutton.dynamicmagic.vampire.VampireCureTreatment.successChance(0, 0));
+        assertEquals(.25, com.strutton.dynamicmagic.vampire.VampireCureTreatment.successChance(0, 1));
+        assertEquals(.75, com.strutton.dynamicmagic.vampire.VampireCureTreatment.successChance(6_000, 1));
+        assertEquals(1, com.strutton.dynamicmagic.vampire.VampireCureTreatment.successChance(12_000, 0));
+        assertEquals(.14, com.strutton.dynamicmagic.vampire.VampireCureTreatment.successChance(0, 0, true, true));
+        assertEquals(.64, com.strutton.dynamicmagic.vampire.VampireCureTreatment.successChance(6_000, 0, true, true));
+        assertTrue(com.strutton.dynamicmagic.vampire.VampireCureTreatment.shadePenalty(100) < .001,
+                "A few seconds outside direct sunlight should have negligible effect");
+        assertEquals(.5, com.strutton.dynamicmagic.vampire.VampireCureTreatment.shadePenalty(1_200));
+        assertEquals(1, com.strutton.dynamicmagic.vampire.VampireCureTreatment.shadePenalty(1_600));
+        assertEquals(.25, com.strutton.dynamicmagic.vampire.VampireCureTreatment.successChance(
+                6_000, 1_200, 1, false, false));
+        assertEquals(13_000, com.strutton.dynamicmagic.vampire.VampireCureTreatment.ticksUntilNextNight(0));
+        assertEquals(7_000, com.strutton.dynamicmagic.vampire.VampireCureTreatment.ticksUntilNextNight(6_000));
+        assertEquals(24_000, com.strutton.dynamicmagic.vampire.VampireCureTreatment.ticksUntilNextNight(13_000));
+    }
+
     private static SpellInstruction operation(Element element, ImpactType impact, TargetMode target) {
         return new SpellInstruction(element, impact, 1, CastDirection.UP, target,
                 PhysicsOperation.ADD_VELOCITY, 8, 0, 2, 1);

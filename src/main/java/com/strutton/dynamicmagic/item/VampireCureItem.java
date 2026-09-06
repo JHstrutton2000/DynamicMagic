@@ -1,6 +1,6 @@
 package com.strutton.dynamicmagic.item;
 
-import com.strutton.dynamicmagic.vampire.Vampirism;
+import com.strutton.dynamicmagic.vampire.VampireCureTreatment;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -16,9 +16,9 @@ public final class VampireCureItem extends Item {
     @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
-            if (Vampirism.cure(serverPlayer)) {
+            if (VampireCureTreatment.start(serverPlayer)) {
                 if (!player.getAbilities().instabuild) stack.shrink(1);
-                player.displayClientMessage(Component.literal("The blood curse leaves your body."), true);
+                player.displayClientMessage(Component.literal("You drink the cure and the treatment begins."), true);
                 return InteractionResultHolder.consume(stack);
             }
             player.displayClientMessage(Component.literal("You are not afflicted with vampirism."), true);

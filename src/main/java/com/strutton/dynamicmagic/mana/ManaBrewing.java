@@ -6,8 +6,10 @@ import com.strutton.dynamicmagic.skill.SkillKnowledge;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -24,6 +26,7 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /** Player-powered brewing that pauses whenever its brewer or their mana is unavailable. */
 public final class ManaBrewing {
@@ -32,20 +35,29 @@ public final class ManaBrewing {
     private static final String PROGRESS = "DynamicMagicManaBrewProgress";
     private static final String OWNER = "DynamicMagicManaBrewOwner";
     private static final String LAST_ACTIVE = "DynamicMagicManaBrewLastActive";
+    private static final String BLOOD_PAID = "DynamicMagicManaBrewBloodPaid";
     private static final int HORIZONTAL_RANGE = 6;
     private static final int VERTICAL_RANGE = 4;
 
     private static final List<BrewRecipe> RECIPES = List.of(
-            new BrewRecipe("mana", Items.AMETHYST_SHARD, DynamicMagic.MANA_POTION, 60, 60, 0, false, .35, 0x8A55FF),
-            new BrewRecipe("reset", Items.CLOCK, DynamicMagic.EXPANSION_RESET_POTION, 60, 150, 0, true, 0, 0xFFD65A),
-            new BrewRecipe("expand_1", Items.GOLD_INGOT, DynamicMagic.MANA_EXPANSION_1, 60, 90, 1, false, 0, 0x62C7FF),
-            new BrewRecipe("expand_5", Items.DIAMOND, DynamicMagic.MANA_EXPANSION_5, 60, 280, 5, false, 0, 0x36E8D4),
-            new BrewRecipe("expand_10", Items.EMERALD_BLOCK, DynamicMagic.MANA_EXPANSION_10, 60, 650, 10, false, 0, 0x36E868),
-            new BrewRecipe("expand_25", Items.NETHER_STAR, DynamicMagic.MANA_EXPANSION_25, 60, 1_800, 25, false, 0, 0xF2E8FF),
-            new BrewRecipe("expand_50", Items.DRAGON_EGG, DynamicMagic.MANA_EXPANSION_50, 60, 5_000, 50, false, 0, 0xC040FF)
+            new BrewRecipe("mana", () -> Items.AMETHYST_SHARD, DynamicMagic.MANA_POTION, 60, 60, 0, 0, false, .35, 0x8A55FF),
+            new BrewRecipe("vampire_cure", ManaBrewing::vampireFangOrFallback, DynamicMagic.VAMPIRE_CURE_POTION,
+                    60, 90, 6, 0, false, 0, 0xB51F3C),
+            new BrewRecipe("reset", () -> Items.CLOCK, DynamicMagic.EXPANSION_RESET_POTION, 60, 150, 0, 0, true, 0, 0xFFD65A),
+            new BrewRecipe("expand_1", () -> Items.GOLD_INGOT, DynamicMagic.MANA_EXPANSION_1, 60, 90, 0, 1, false, 0, 0x62C7FF),
+            new BrewRecipe("expand_5", () -> Items.DIAMOND, DynamicMagic.MANA_EXPANSION_5, 60, 280, 0, 5, false, 0, 0x36E8D4),
+            new BrewRecipe("expand_10", () -> Items.EMERALD_BLOCK, DynamicMagic.MANA_EXPANSION_10, 60, 650, 0, 10, false, 0, 0x36E868),
+            new BrewRecipe("expand_25", () -> Items.NETHER_STAR, DynamicMagic.MANA_EXPANSION_25, 60, 1_800, 0, 25, false, 0, 0xF2E8FF),
+            new BrewRecipe("expand_50", () -> Items.DRAGON_EGG, DynamicMagic.MANA_EXPANSION_50, 60, 5_000, 0, 50, false, 0, 0xC040FF)
     );
 
     private ManaBrewing() {}
+
+    private static Item vampireFangOrFallback() {
+        Item fang = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath("vampirism", "vampire_fang"));
+        // Internal vampires use the zombie fallback and therefore naturally drop rotten flesh.
+        return fang == Items.AIR ? Items.ROTTEN_FLESH : fang;
+    }
 
     /**
      * Marks our catalysts as legal brewing-stand ingredients without giving the
@@ -88,13 +100,18 @@ public final class ManaBrewing {
     public static void onPotionFinished(LivingEntityUseItemEvent.Finish event) {
         if (!(event.getEntity() instanceof ServerPlayer player) || !event.getItem().is(Items.POTION)) return;
         PotionContents contents = event.getItem().get(DataComponents.POTION_CONTENTS);
-        if (contents == null || contents.potion().isEmpty()) return;
+        if (contents == null) return;
+        com.strutton.dynamicmagic.vampire.VampireCureTreatment.recordSupportPotion(player, contents);
+        if (contents.potion().isEmpty()) return;
         applyPotion(player, contents.potion().get());
     }
 
     public static boolean applyPotion(ServerPlayer player, Holder<Potion> potion) {
         BrewRecipe recipe = RECIPES.stream().filter(candidate -> potion.is(candidate.output())).findFirst().orElse(null);
         if (recipe == null) return false;
+
+        if (potion.is(DynamicMagic.VAMPIRE_CURE_POTION))
+            return com.strutton.dynamicmagic.vampire.VampireCureTreatment.start(player);
 
         if (recipe.manaRestoreFraction() > 0) {
             double restored = Mana.max(player) * recipe.manaRestoreFraction();
@@ -134,6 +151,18 @@ public final class ManaBrewing {
 
         int requiredSeconds = requiredSeconds(player, recipe);
         double pulseCost = totalManaCost(player, recipe) / requiredSeconds;
+        int nextProgress = data.getInt(PROGRESS) + 1;
+        int paidBlood = data.getInt(BLOOD_PAID);
+        int bloodDue = Math.max(0, (int) Math.ceil(recipe.vampireBloodCost()
+                * nextProgress / (double) requiredSeconds) - paidBlood);
+        if (recipe.vampireBloodCost() > 0 && (!com.strutton.dynamicmagic.vampire.Vampirism.isVampire(player)
+                || com.strutton.dynamicmagic.vampire.Vampirism.bloodLevel(player) <= 0
+                || com.strutton.dynamicmagic.vampire.Vampirism.bloodLevel(player) < bloodDue)) {
+            if (now % 100 == 0) player.displayClientMessage(Component.literal(
+                    "Vampire cure brewing paused: you need vampire blood in your body."), true);
+            stand.setChanged();
+            return false;
+        }
         if (!Mana.isUnlimited(player) && Mana.get(player) + 1.0e-6 < pulseCost) {
             if (now % 100 == 0) player.displayClientMessage(Component.literal("Mana brewing paused: need "
                     + String.format(java.util.Locale.ROOT, "%.2f", pulseCost) + " mana for the next step."), true);
@@ -141,8 +170,12 @@ public final class ManaBrewing {
             return false;
         }
         if (!Mana.consume(player, pulseCost)) return false;
+        if (bloodDue > 0) {
+            if (!com.strutton.dynamicmagic.vampire.Vampirism.consumeBlood(player, bloodDue)) return false;
+            data.putInt(BLOOD_PAID, paidBlood + bloodDue);
+        }
 
-        int progress = data.getInt(PROGRESS) + 1;
+        int progress = nextProgress;
         data.putInt(PROGRESS, progress);
         if (progress % 10 == 0)
             player.displayClientMessage(Component.literal("Mana brewing: " + progress + "/" + requiredSeconds
@@ -222,11 +255,15 @@ public final class ManaBrewing {
         data.remove(PROGRESS);
         data.remove(OWNER);
         data.remove(LAST_ACTIVE);
+        data.remove(BLOOD_PAID);
         stand.setChanged();
     }
 
-    public record BrewRecipe(String id, Item ingredient, Holder<Potion> output, int baseSeconds, double baseMana,
-                             int expansionPercent, boolean resetsExpansion, double manaRestoreFraction, int color) {
+    public record BrewRecipe(String id, Supplier<Item> ingredientSupplier, Holder<Potion> output,
+                             int baseSeconds, double baseMana,
+                             int vampireBloodCost, int expansionPercent, boolean resetsExpansion,
+                             double manaRestoreFraction, int color) {
+        public Item ingredient() { return ingredientSupplier.get(); }
         double masteryReward() { return 1 + expansionPercent * .5 + (resetsExpansion ? 2 : 0); }
     }
 }

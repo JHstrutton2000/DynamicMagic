@@ -85,6 +85,8 @@ public final class VampireEvents {
     }
 
     @SubscribeEvent public static void onDeath(LivingDeathEvent event) {
+        if (event.getEntity() instanceof ServerPlayer deadPlayer)
+            VampireCureTreatment.cancelOnDeath(deadPlayer);
         if (event.getEntity().getPersistentData().getLong("DynamicMagicSoulTrappedUntil")
                 < event.getEntity().level().getGameTime()
                 || !(event.getSource().getEntity() instanceof ServerPlayer player)) return;
@@ -107,6 +109,7 @@ public final class VampireEvents {
                 if (entity instanceof Mob mob && isVampireEnemy(mob)) tickEnemy(level, mob, gameTime);
             }
             for (ServerPlayer player : level.players()) {
+                VampireCureTreatment.tick(player);
                 if (SkillKnowledge.knows(player, MagicSkill.VAMPIRE_IMMUNITY)) {
                     if (Vampirism.enforceImmunity(player))
                         player.displayClientMessage(Component.literal("Your Vampire Immunity purges the infection."), false);

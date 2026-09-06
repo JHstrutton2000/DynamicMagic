@@ -47,6 +47,8 @@ public final class DynamicMagic {
             DeferredRegister.create(Registries.POTION, MOD_ID);
     public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> MANA_POTION =
             POTIONS.register("mana", () -> new net.minecraft.world.item.alchemy.Potion());
+    public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> VAMPIRE_CURE_POTION =
+            POTIONS.register("vampire_cure", () -> new net.minecraft.world.item.alchemy.Potion());
     public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> EXPANSION_RESET_POTION =
             POTIONS.register("expansion_reset", () -> new net.minecraft.world.item.alchemy.Potion());
     public static final DeferredHolder<net.minecraft.world.item.alchemy.Potion, net.minecraft.world.item.alchemy.Potion> MANA_EXPANSION_1 =
@@ -120,6 +122,7 @@ public final class DynamicMagic {
                         ELEMENT_GRIMOIRES.values().forEach(holder -> output.accept(holder.get()));
                         SKILL_TOMES.values().forEach(holder -> output.accept(holder.get()));
                         output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(MANA_POTION));
+                        output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(VAMPIRE_CURE_POTION));
                         output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(EXPANSION_RESET_POTION));
                         output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(MANA_EXPANSION_1));
                         output.accept(com.strutton.dynamicmagic.mana.ManaBrewing.potionStack(MANA_EXPANSION_5));

@@ -40,6 +40,48 @@ public final class Vampirism {
         leaveExternalFaction(player);
         return was;
     }
+    /** 0 means recently fed; 1 means completely blood-starved. */
+    public static double bloodHunger(ServerPlayer player) {
+        if (isExternalPlayerVampire(player)) {
+            try {
+                Object vampire = api().getMethod("vampirePlayer", net.minecraft.world.entity.player.Player.class)
+                        .invoke(null, player);
+                Object relative = Class.forName("de.teamlapen.vampirism.api.entity.player.vampire.IVampirePlayer")
+                        .getMethod("getBloodLevelRelative").invoke(vampire);
+                if (relative instanceof Number number)
+                    return Math.max(0, Math.min(1, 1 - number.doubleValue()));
+            } catch (ReflectiveOperationException | LinkageError ignored) { }
+        }
+        return Math.max(0, Math.min(1, 1 - player.getFoodData().getFoodLevel() / 20.0));
+    }
+    public static int bloodLevel(ServerPlayer player) {
+        if (isExternalPlayerVampire(player)) {
+            try {
+                Object vampire = api().getMethod("vampirePlayer", net.minecraft.world.entity.player.Player.class)
+                        .invoke(null, player);
+                Object level = Class.forName("de.teamlapen.vampirism.api.entity.player.vampire.IVampirePlayer")
+                        .getMethod("getBloodLevel").invoke(vampire);
+                if (level instanceof Number number) return Math.max(0, number.intValue());
+            } catch (ReflectiveOperationException | LinkageError ignored) { }
+        }
+        return player.getFoodData().getFoodLevel();
+    }
+    public static boolean consumeBlood(ServerPlayer player, int amount) {
+        if (amount <= 0) return true;
+        if (isExternalPlayerVampire(player)) {
+            try {
+                Object vampire = api().getMethod("vampirePlayer", net.minecraft.world.entity.player.Player.class)
+                        .invoke(null, player);
+                Object consumed = Class.forName("de.teamlapen.vampirism.api.entity.player.vampire.IVampirePlayer")
+                        .getMethod("useBlood", int.class, boolean.class).invoke(vampire, amount, false);
+                return Boolean.TRUE.equals(consumed);
+            } catch (ReflectiveOperationException | LinkageError ignored) { return false; }
+        }
+        int available = player.getFoodData().getFoodLevel();
+        if (available < amount) return false;
+        player.getFoodData().setFoodLevel(available - amount);
+        return true;
+    }
     public static void copy(ServerPlayer from, ServerPlayer to) {
         if (isInternal(from)) to.getPersistentData().putBoolean(KEY, true);
     }
