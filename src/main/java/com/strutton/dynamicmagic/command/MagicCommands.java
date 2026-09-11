@@ -56,7 +56,7 @@ public final class MagicCommands {
         root.then(Commands.literal("storage").executes(context -> {
             ServerPlayer player = context.getSource().getPlayerOrException();
             int count = MagicStorage.size(player);
-            context.getSource().sendSuccess(() -> Component.literal("Magic storage: " + count + "/" + MagicStorage.CAPACITY), false);
+            context.getSource().sendSuccess(() -> Component.literal("Magic storage: " + count + "/" + MagicStorage.capacity(player)), false);
             return count;
         }));
         root.then(Commands.literal("mastery").executes(context -> {
@@ -84,6 +84,18 @@ public final class MagicCommands {
                     .map(com.strutton.dynamicmagic.skill.MagicSkill::displayName).collect(Collectors.joining(", "));
             context.getSource().sendSuccess(() -> Component.literal(skills.isEmpty() ? "No discovered magic skills." : "Magic skills: " + skills), false);
             return skills.isEmpty() ? 0 : 1;
+        }));
+        root.then(Commands.literal("ki").executes(context -> {
+            ServerPlayer player = context.getSource().getPlayerOrException();
+            boolean installed = com.strutton.dynamicmagic.compat.EternalCultivationBridge.installed();
+            boolean fusion = SkillKnowledge.knows(player, MagicSkill.KI_MANA_FUSION);
+            int current = installed ? com.strutton.dynamicmagic.compat.EternalCultivationBridge.current(player) : 0;
+            int maximum = installed ? com.strutton.dynamicmagic.compat.EternalCultivationBridge.maximum(player) : 0;
+            context.getSource().sendSuccess(() -> Component.literal(installed
+                    ? "Eternal Cultivation qi: " + current + '/' + maximum + "; Ki-Mana Fusion: "
+                    + (fusion ? "learned" : "unknown") + ". Qi and mana remain separate."
+                    : "Eternal Cultivation is not loaded; Ki spells cannot draw qi."), false);
+            return installed ? current : 0;
         }));
 
         LiteralArgumentBuilder<CommandSourceStack> skillCommands = Commands.literal("skill");

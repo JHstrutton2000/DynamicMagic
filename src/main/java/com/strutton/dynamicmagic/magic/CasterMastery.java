@@ -14,6 +14,8 @@ public final class CasterMastery {
         CompoundTag data = player.getPersistentData();
         double control = data.contains(CONTROL) ? data.getDouble(CONTROL) : 3.0;
         double efficiency = data.contains(EFFICIENCY) ? data.getDouble(EFFICIENCY) : 1.0;
+        control += com.strutton.dynamicmagic.compat.SoloLevelingIntegration.controlBonus(player);
+        efficiency *= com.strutton.dynamicmagic.compat.SoloLevelingIntegration.efficiencyMultiplier(player);
         return new CasterStats(control, efficiency);
     }
 

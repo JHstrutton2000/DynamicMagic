@@ -1,0 +1,1 @@
+{"type":"minecraft:crafting_shaped","category":"redstone","pattern":["CRC","ROR","CRC"],"key":{"C":{"item":"minecraft:crying_obsidian"},"R":{"item":"minecraft:redstone"},"O":{"item":"dynamicmagic:lesser_mana_crystal"}},"result":{"id":"dynamicmagic:spell_automation_block","count":1}}

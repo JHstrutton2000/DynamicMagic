@@ -28,7 +28,8 @@ import org.joml.Vector3f;
 
 /** Rare mages hiding in the unmodified body and behavior set of ordinary mobs. */
 public final class MorphMageEvents {
-    public static final double MORPH_MAGE_CHANCE = .01;
+    /** One natural morph mage per roughly one thousand otherwise eligible mob spawns. */
+    public static final double MORPH_MAGE_CHANCE = .001;
     private static final String CHECKED = "DynamicMagicMorphMageChecked";
     private static final String MORPH_MAGE = "DynamicMagicMorphMage";
     private static final String TELL = "DynamicMagicMorphMageTell";
@@ -49,7 +50,8 @@ public final class MorphMageEvents {
                 || !(event.getEntity() instanceof Mob mob)
                 || mob.getPersistentData().getBoolean(CHECKED)) return;
         mob.getPersistentData().putBoolean(CHECKED, true);
-        if (eligible(mob) && mob.getRandom().nextDouble() < MORPH_MAGE_CHANCE) makeMorphMage(mob);
+        if (eligible(mob) && mob.getRandom().nextDouble() < MORPH_MAGE_CHANCE
+                && !hasActiveMorphMage(mob)) makeMorphMage(mob);
     }
 
     public static boolean makeMorphMage(LivingEntity entity) {
@@ -153,8 +155,20 @@ public final class MorphMageEvents {
         return new com.strutton.dynamicmagic.network.MorphMageSyncPayload(entity.getId(), eyeColor(entity));
     }
 
+    /** Natural spawning is capped across every currently loaded dimension on this server. */
+    private static boolean hasActiveMorphMage(Mob candidate) {
+        var server = candidate.getServer();
+        if (server == null) return false;
+        for (ServerLevel level : server.getAllLevels())
+            for (var raw : level.getAllEntities())
+                if (raw != candidate && raw instanceof LivingEntity living
+                        && living.isAlive() && isMorphMage(living)) return true;
+        return false;
+    }
+
     private static boolean eligible(LivingEntity entity) {
         return entity instanceof Mob && !(entity instanceof EnderDragon) && !(entity instanceof WitherBoss)
+                && com.strutton.dynamicmagic.compat.SoloLevelingIntegration.canMorph(entity)
                 && !entity.getType().is(BOSSES) && !VillageMageEvents.isMage(entity)
                 && entity.getType() != DynamicMagic.CREEPER_VILLAGER.get()
                 && entity.getType() != DynamicMagic.ENDERMAN_VILLAGER.get()

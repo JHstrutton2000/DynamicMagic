@@ -10,6 +10,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.List;
 
 public final class EntityStorageScreen extends Screen {
+    private int heartbeat;
     private static final int PAGE_SIZE = 8;
     private final List<String> names;
     private int page;
@@ -39,4 +40,8 @@ public final class EntityStorageScreen extends Screen {
         super.render(graphics, mouseX, mouseY, partialTick);
     }
     @Override public boolean isPauseScreen() { return false; }
+    @Override public void tick() {
+        super.tick();
+        if (++heartbeat >= 20) { heartbeat = 0; net.neoforged.neoforge.network.PacketDistributor.sendToServer(new com.strutton.dynamicmagic.network.SpatialStorageHeartbeatPayload()); }
+    }
 }

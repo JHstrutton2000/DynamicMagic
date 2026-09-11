@@ -136,6 +136,86 @@ class SpellSystemTest {
         assertEquals(24_000, com.strutton.dynamicmagic.vampire.VampireCureTreatment.ticksUntilNextNight(13_000));
     }
 
+    @Test void manaBrewingCountdownFormatsSecondsAndMinutes() {
+        assertEquals("0s", com.strutton.dynamicmagic.mana.ManaBrewing.formatDuration(0));
+        assertEquals("59s", com.strutton.dynamicmagic.mana.ManaBrewing.formatDuration(59));
+        assertEquals("1:00", com.strutton.dynamicmagic.mana.ManaBrewing.formatDuration(60));
+        assertEquals("2:05", com.strutton.dynamicmagic.mana.ManaBrewing.formatDuration(125));
+    }
+
+    @Test void apothicSpawnerAndAttributeScalingStayBounded() {
+        assertEquals(2, com.strutton.dynamicmagic.compat.ApotheosisIntegration.spawnManaCost(1));
+        assertEquals(4, com.strutton.dynamicmagic.compat.ApotheosisIntegration.spawnManaCost(20));
+        assertEquals(40, com.strutton.dynamicmagic.compat.ApotheosisIntegration.spawnManaCost(200));
+        assertEquals(1.25, com.strutton.dynamicmagic.compat.ApotheosisIntegration
+                .cappedAttributeBonus(10, 5));
+        assertEquals(2.5, com.strutton.dynamicmagic.compat.ApotheosisIntegration
+                .cappedAttributeBonus(10, 100));
+    }
+
+    @Test void ironSpellSchoolsMapToRelevantDynamicElements() {
+        assertEquals(Element.FIRE, com.strutton.dynamicmagic.compat.IronSpellsIntegration.elementForSchool("fire"));
+        assertEquals(Element.ICE, com.strutton.dynamicmagic.compat.IronSpellsIntegration.elementForSchool("ice"));
+        assertEquals(Element.LIGHTNING, com.strutton.dynamicmagic.compat.IronSpellsIntegration.elementForSchool("lightning"));
+        assertEquals(Element.DIVINE, com.strutton.dynamicmagic.compat.IronSpellsIntegration.elementForSchool("holy"));
+        assertEquals(Element.SPACE, com.strutton.dynamicmagic.compat.IronSpellsIntegration.elementForSchool("ender"));
+        assertEquals(Element.BLOOD, com.strutton.dynamicmagic.compat.IronSpellsIntegration.elementForSchool("blood"));
+        assertEquals(Element.SPIRIT, com.strutton.dynamicmagic.compat.IronSpellsIntegration.elementForSchool("nature"));
+        assertEquals(Element.SHADOW, com.strutton.dynamicmagic.compat.IronSpellsIntegration.elementForSchool("eldritch"));
+        assertEquals(Element.ARCANE, com.strutton.dynamicmagic.compat.IronSpellsIntegration.elementForSchool("evocation"));
+        assertEquals(Element.FIRE, com.strutton.dynamicmagic.compat.IronSpellsIntegration.elementForSchool("pyromancy"));
+    }
+
+    @Test void opposingAndCooperativeElementRatiosFollowCombinationLaw() {
+        SpellInstruction fire = new SpellInstruction(Element.FIRE, ImpactType.EXPLODE, 10,
+                CastDirection.LOOK, TargetMode.AIM, PhysicsOperation.ADD_VELOCITY, 16, 3, 1, 1);
+        SpellInstruction water = fire.withElement(Element.WATER).withPower(5);
+        var opposed = ElementInteractions.effectiveForces(List.of(fire, water), 1);
+        assertTrue(opposed.get(Element.FIRE) < 10, "Water must strongly weaken fire");
+        assertTrue(opposed.get(Element.WATER) > 0 && opposed.get(Element.WATER) < 5,
+                "The clash must weaken water by a smaller amount");
+        SpellInstruction earth = fire.withElement(Element.EARTH).withPower(5);
+        var bonded = ElementInteractions.effectiveForces(List.of(earth, water), 1);
+        assertTrue(bonded.get(Element.EARTH) > 5, "Water must strengthen earth");
+        assertTrue(bonded.get(Element.WATER) < 5, "Bonding into earth must consume some water force");
+    }
+
+    @Test void elementPresetsAreBoundedAndDiscardEmptyRatios() {
+        ElementPreset preset = new ElementPreset("Steam Formula", List.of(
+                new ElementPreset.Entry(Element.FIRE, 70), new ElementPreset.Entry(Element.WATER, 30),
+                new ElementPreset.Entry(Element.AIR, 0)));
+        assertEquals(2, preset.entries().size());
+        assertEquals("Steam Formula", ElementPreset.fromTag(preset.toTag()).name());
+    }
+
+    @Test void kiRemainsASeparateWeightedSpellContribution() {
+        SpellInstruction fire = operation(Element.FIRE, ImpactType.DAMAGE, TargetMode.TRACKED).withPower(3);
+        SpellInstruction ki = operation(Element.KI, ImpactType.PHYSICS, TargetMode.SELF).withPower(1);
+        CraftedSpell spell = new CraftedSpell("Ki Fire", SourceType.CREATE, Element.FIRE, SpellForm.BOLT,
+                DeliveryType.PROJECTILE, ImpactType.DAMAGE, 3, CastDirection.LOOK, false,
+                ConditionType.ALWAYS, 20, 12, TargetMode.TRACKED, ProgramTargetMode.CASTER_AIM,
+                PhysicsOperation.ADD_VELOCITY, List.of(fire, ki));
+        assertEquals(.25, SpellResourcePayment.kiShare(spell), 1.0e-9);
+        assertEquals(TargetMode.TRACKED, SpellInstruction.fromTag(fire.toTag()).targetMode());
+        assertTrue(com.strutton.dynamicmagic.skill.MagicSkill.values().length < 64,
+                "The persistent skill mask must remain within one long");
+    }
+
+    @Test void rainOnlyDiscountsTheWaterShareOfSpellMana() {
+        SpellInstruction water = operation(Element.WATER, ImpactType.DAMAGE, TargetMode.AIM).withPower(3);
+        SpellInstruction fire = operation(Element.FIRE, ImpactType.DAMAGE, TargetMode.AIM).withPower(1);
+        CraftedSpell mixed = new CraftedSpell("Rain-fed Steam", SourceType.CREATE, Element.WATER, SpellForm.BOLT,
+                DeliveryType.PROJECTILE, ImpactType.DAMAGE, 3, CastDirection.LOOK, false,
+                ConditionType.ALWAYS, 20, 12, TargetMode.AIM, ProgramTargetMode.CASTER_AIM,
+                PhysicsOperation.ADD_VELOCITY, List.of(water, fire));
+        assertEquals(1, SpellResourcePayment.manaShare(mixed, false), 1.0e-9);
+        assertEquals(.4375, SpellResourcePayment.manaShare(mixed, true), 1.0e-9,
+                "Rain should discount 75% of the spell's three-quarter water contribution");
+        CraftedSpell fireOnly = mixed.withOnlyInstruction(fire);
+        assertEquals(1, SpellResourcePayment.manaShare(fireOnly, true), 1.0e-9,
+                "Rain must not discount unrelated elements");
+    }
+
     private static SpellInstruction operation(Element element, ImpactType impact, TargetMode target) {
         return new SpellInstruction(element, impact, 1, CastDirection.UP, target,
                 PhysicsOperation.ADD_VELOCITY, 8, 0, 2, 1);

@@ -8,6 +8,7 @@ public final class SkillKnowledge {
     public static boolean knows(ServerPlayer player, MagicSkill skill) {
         return (player.getPersistentData().getLong(KEY) & (1L << skill.ordinal())) != 0;
     }
+    public static long mask(ServerPlayer player) { return player.getPersistentData().getLong(KEY); }
     public static boolean learn(ServerPlayer player, MagicSkill skill) {
         long before = player.getPersistentData().getLong(KEY);
         player.getPersistentData().putLong(KEY, before | (1L << skill.ordinal()));

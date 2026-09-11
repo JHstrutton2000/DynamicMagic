@@ -19,12 +19,20 @@ public final class Mana {
     private Mana() {}
 
     public static double get(ServerPlayer player) {
+        com.strutton.dynamicmagic.compat.IronSpellsIntegration.ensureMerged(player, nativeMaximum(player));
+        com.strutton.dynamicmagic.compat.SoloLevelingIntegration.ensureMerged(player,
+                com.strutton.dynamicmagic.compat.IronSpellsIntegration.effectiveMaximum(player, nativeMaximum(player)));
         if (isUnlimited(player)) return Double.POSITIVE_INFINITY;
         var data = player.getPersistentData();
         return data.contains(CURRENT) ? Math.min(data.getDouble(CURRENT), max(player)) : max(player);
     }
 
     public static double max(ServerPlayer player) {
+        double base = com.strutton.dynamicmagic.compat.IronSpellsIntegration.effectiveMaximum(player, nativeMaximum(player));
+        return com.strutton.dynamicmagic.compat.SoloLevelingIntegration.effectiveMaximum(player, base);
+    }
+
+    public static double nativeMaximum(ServerPlayer player) {
         var data = player.getPersistentData();
         return data.contains(MAXIMUM) ? Math.max(1, data.getDouble(MAXIMUM)) : DEFAULT_MAX;
     }
@@ -35,6 +43,8 @@ public final class Mana {
         if (!Double.isFinite(value)) return;
         player.getPersistentData().putDouble(CURRENT, Math.max(0, Math.min(max(player), value)));
         if (value > max(player) * .1) player.getPersistentData().putBoolean(EXHAUSTED, false);
+        com.strutton.dynamicmagic.compat.IronSpellsIntegration.syncFromDynamic(player);
+        com.strutton.dynamicmagic.compat.SoloLevelingIntegration.syncFromDynamic(player);
     }
 
     public static void setMaximum(ServerPlayer player, double value) {
@@ -165,5 +175,6 @@ public final class Mana {
                 EXPANSION_READY_AT, EXPANSION_HUNGER_DEBT})
             if (original.getPersistentData().contains(key))
                 replacement.getPersistentData().put(key, original.getPersistentData().get(key).copy());
+        com.strutton.dynamicmagic.compat.SoloLevelingIntegration.copy(original, replacement);
     }
 }

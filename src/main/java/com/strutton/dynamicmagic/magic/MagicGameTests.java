@@ -745,7 +745,9 @@ public final class MagicGameTests {
                 "A generic villager could not become a morph mage");
         helper.assertTrue(villager.getCustomName() == null, "Morph mage received an identifying name");
         var offers = com.strutton.dynamicmagic.mage.MorphMageEvents.offers(villager);
-        helper.assertTrue(offers.size() == 2, "Morph mage did not preserve its original trade");
+        helper.assertTrue(offers.stream().anyMatch(offer -> offer.getResult().is(net.minecraft.world.item.Items.EMERALD)
+                        && offer.getItemCostA().itemStack().is(net.minecraft.world.item.Items.WHEAT)),
+                "Morph mage did not preserve its original trade");
         helper.assertTrue(offers.stream().anyMatch(offer -> offer.getResult().is(
                         DynamicMagic.SKILL_TOMES.get(com.strutton.dynamicmagic.skill.MagicSkill.MORPHING).get())),
                 "Morph mage did not add the Morphing skill tome trade");

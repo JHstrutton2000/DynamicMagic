@@ -25,6 +25,7 @@ import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -158,14 +159,14 @@ public final class ManaBrewing {
         if (recipe.vampireBloodCost() > 0 && (!com.strutton.dynamicmagic.vampire.Vampirism.isVampire(player)
                 || com.strutton.dynamicmagic.vampire.Vampirism.bloodLevel(player) <= 0
                 || com.strutton.dynamicmagic.vampire.Vampirism.bloodLevel(player) < bloodDue)) {
-            if (now % 100 == 0) player.displayClientMessage(Component.literal(
-                    "Vampire cure brewing paused: you need vampire blood in your body."), true);
+            showProgress(player, recipe, data.getInt(PROGRESS), requiredSeconds,
+                    "paused: you need vampire blood in your body");
             stand.setChanged();
             return false;
         }
         if (!Mana.isUnlimited(player) && Mana.get(player) + 1.0e-6 < pulseCost) {
-            if (now % 100 == 0) player.displayClientMessage(Component.literal("Mana brewing paused: need "
-                    + String.format(java.util.Locale.ROOT, "%.2f", pulseCost) + " mana for the next step."), true);
+            showProgress(player, recipe, data.getInt(PROGRESS), requiredSeconds,
+                    "paused: need " + String.format(Locale.ROOT, "%.2f", pulseCost) + " mana for the next step");
             stand.setChanged();
             return false;
         }
@@ -177,16 +178,41 @@ public final class ManaBrewing {
 
         int progress = nextProgress;
         data.putInt(PROGRESS, progress);
-        if (progress % 10 == 0)
-            player.displayClientMessage(Component.literal("Mana brewing: " + progress + "/" + requiredSeconds
-                    + "s (mastery " + masteryLevel(player) + "/20)"), true);
         if (progress < requiredSeconds) {
+            showProgress(player, recipe, progress, requiredSeconds, null);
             stand.setChanged();
             return true;
         }
 
         complete(player, stand, recipe);
         return true;
+    }
+
+    private static void showProgress(ServerPlayer player, BrewRecipe recipe, int progress,
+                                     int requiredSeconds, String state) {
+        int completed = Math.max(0, Math.min(progress, requiredSeconds));
+        int percent = (int) Math.floor(completed * 100.0 / requiredSeconds);
+        int remaining = Math.max(0, requiredSeconds - completed);
+        String name = switch (recipe.id()) {
+            case "vampire_cure" -> "Vampire Cure";
+            case "reset" -> "Mana Expansion Reset";
+            case "expand_1" -> "1% Mana Expansion";
+            case "expand_5" -> "5% Mana Expansion";
+            case "expand_10" -> "10% Mana Expansion";
+            case "expand_25" -> "25% Mana Expansion";
+            case "expand_50" -> "50% Mana Expansion";
+            default -> "Mana Potion";
+        };
+        String suffix = state == null ? "brewing" : state;
+        player.displayClientMessage(Component.literal(name + ": " + percent + "% | "
+                + formatDuration(remaining) + " brewing time left | " + suffix), true);
+    }
+
+    public static String formatDuration(int totalSeconds) {
+        int seconds = Math.max(0, totalSeconds);
+        int minutes = seconds / 60;
+        int remainder = seconds % 60;
+        return minutes > 0 ? String.format(Locale.ROOT, "%d:%02d", minutes, remainder) : remainder + "s";
     }
 
     private static void complete(ServerPlayer player, BrewingStandBlockEntity stand, BrewRecipe recipe) {

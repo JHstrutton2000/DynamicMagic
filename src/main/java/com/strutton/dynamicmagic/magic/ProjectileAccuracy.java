@@ -11,7 +11,8 @@ public final class ProjectileAccuracy {
 
     public static double experience(ServerPlayer player) { return player.getPersistentData().getDouble(KEY); }
     public static double value(ServerPlayer player) {
-        return Math.min(.99, .55 + Math.sqrt(experience(player)) * .018);
+        return Math.min(.99, .55 + Math.sqrt(experience(player)) * .018
+                + com.strutton.dynamicmagic.compat.SoloLevelingIntegration.accuracyBonus(player));
     }
     public static void practice(ServerPlayer player, CraftedSpell spell) {
         if (spell.delivery() != DeliveryType.PROJECTILE) return;

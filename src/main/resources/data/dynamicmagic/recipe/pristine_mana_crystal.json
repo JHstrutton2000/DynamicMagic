@@ -1,0 +1,1 @@
+{"type":"minecraft:crafting_shaped","category":"misc","pattern":["NEN","ECE","NEN"],"key":{"N":{"item":"minecraft:nether_star"},"E":{"item":"minecraft:echo_shard"},"C":{"item":"dynamicmagic:greater_mana_crystal"}},"result":{"id":"dynamicmagic:pristine_mana_crystal","count":1}}

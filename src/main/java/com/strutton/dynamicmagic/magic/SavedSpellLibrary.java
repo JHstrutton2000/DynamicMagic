@@ -37,6 +37,24 @@ public final class SavedSpellLibrary {
         return List.copyOf(result);
     }
 
+    public static CraftedSpell find(ServerPlayer player, String name) {
+        if (name == null) return null;
+        return spells(player).stream().filter(spell -> spell.name().equalsIgnoreCase(name)).findFirst().orElse(null);
+    }
+
+    public static boolean remove(ServerPlayer player, String name) {
+        if (name == null) return false;
+        ListTag values = tags(player);
+        for (int i = 0; i < values.size(); i++) {
+            if (values.getCompound(i).getString("Name").equalsIgnoreCase(name)) {
+                values.remove(i);
+                player.getPersistentData().put(KEY, values);
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static void copy(ServerPlayer from, ServerPlayer to) { to.getPersistentData().put(KEY, tags(from)); }
     private static ListTag tags(ServerPlayer player) { return player.getPersistentData().getList(KEY, Tag.TAG_COMPOUND).copy(); }
 }

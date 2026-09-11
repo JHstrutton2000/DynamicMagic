@@ -10,8 +10,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public final class ClientPayloadHandler {
     private ClientPayloadHandler() {}
     public static void openSpellbook(OpenSpellbookPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> ClientSpellbook.open(payload.snapshot(), new com.strutton.dynamicmagic.magic.CasterStats(payload.control(), payload.efficiency()),
-                payload.savedSpells(), payload.editingSpell(), payload.forceCaps()));
+        context.enqueueWork(() -> ClientSpellbook.open(payload));
     }
     public static void syncMana(ManaSyncPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> ClientManaState.update(payload.current(), payload.maximum(), payload.unlimited()));
@@ -25,5 +24,8 @@ public final class ClientPayloadHandler {
                     && Minecraft.getInstance().level.getEntity(payload.entityId()) instanceof net.minecraft.world.entity.LivingEntity entity)
                 com.strutton.dynamicmagic.mage.MorphMageEvents.applyClientVisual(entity, payload.eyeColor());
         });
+    }
+    public static void openSpellNode(com.strutton.dynamicmagic.network.OpenSpellNodePayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> Minecraft.getInstance().setScreen(new SpellNodeScreen(payload)));
     }
 }

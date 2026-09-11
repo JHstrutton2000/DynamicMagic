@@ -113,6 +113,7 @@ public final class DragonIntegration {
             case SHADOW, UNDEAD, BLOOD -> EnumSet.of(Element.LIGHT, Element.DIVINE);
             case SPIRIT -> EnumSet.of(Element.DIVINE);
             case ARCANE, SPACE -> EnumSet.of(Element.LIGHT);
+            case KI -> EnumSet.noneOf(Element.class);
             default -> EnumSet.noneOf(Element.class);
         };
     }

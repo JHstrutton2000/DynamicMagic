@@ -32,6 +32,7 @@ public final class CraftedSpellItem extends Item {
         CraftedSpell spell = CraftedSpell.read(stack);
         if (spell == null) return InteractionResultHolder.fail(stack);
         if (player instanceof ServerPlayer serverPlayer) {
+            if (!SpellResourcePayment.validate(serverPlayer, spell, true)) return InteractionResultHolder.fail(stack);
             if (!ComponentKnowledge.canUse(player, spell)) {
                 serverPlayer.displayClientMessage(Component.literal("This spell contains knowledge you have not learned.")
                         .withStyle(ChatFormatting.RED), true);
@@ -61,8 +62,8 @@ public final class CraftedSpellItem extends Item {
                 return InteractionResultHolder.sidedSuccess(stack, false);
             }
             SpellCost cost = SpellCostCalculator.calculate(spell.definition(), CasterMastery.stats(serverPlayer));
-            if (!Mana.consume(serverPlayer, cost.formation())) {
-                serverPlayer.displayClientMessage(Component.literal("Not enough mana to form " + spell.name())
+            if (!SpellResourcePayment.pay(serverPlayer, spell, cost, SpellResourcePayment.Part.FORMATION)) {
+                serverPlayer.displayClientMessage(Component.literal("Not enough mana or qi to form " + spell.name())
                         .withStyle(ChatFormatting.RED), true);
                 return InteractionResultHolder.fail(stack);
             }
@@ -82,8 +83,9 @@ public final class CraftedSpellItem extends Item {
         if (spell == null) { player.stopUsingItem(); return; }
         int usedTicks = USE_DURATION - remainingTicks;
         SpellCost cost = SpellCostCalculator.calculate(spell.definition(), CasterMastery.stats(player));
-        if (usedTicks % 20 == 0 && !Mana.consume(player, cost.maintenancePerSecond())) {
-            player.displayClientMessage(Component.literal("Not enough mana to maintain " + spell.name())
+        if (usedTicks % 20 == 0 && !SpellResourcePayment.pay(player, spell, cost,
+                SpellResourcePayment.Part.MAINTENANCE)) {
+            player.displayClientMessage(Component.literal("Not enough mana or qi to maintain " + spell.name())
                     .withStyle(ChatFormatting.RED), true);
             TimeMagicController.deactivate(player);
             SustainedMagicController.deactivate(player);
@@ -92,15 +94,17 @@ public final class CraftedSpellItem extends Item {
         }
         if (spell.hasTimeMagic()) {
             SpellInstruction time = spell.timeInstruction();
-            TimeMagicController.activate(player, time.impact(), time.power() * chargeMultiplier(usedTicks));
+            TimeMagicController.activate(player, time.impact(), time.power() * chargeMultiplier(player, usedTicks)
+                    * SpellResourcePayment.powerMultiplier(player, spell));
             return;
         }
         boolean heldLift = isHeldLift(spell);
         if (spell.delivery() == DeliveryType.CONTINUOUS && usedTicks >= (heldLift ? 1 : 10)
                 && (heldLift || usedTicks % 8 == 0)) {
             double pulseCost = spell.isStudyOnly() ? 0 : Math.max(0.25, cost.release() * 0.22);
-            if (usedTicks % 8 != 0 || Mana.consume(player, pulseCost)) {
-                SpellExecutor.cast(player, spell, chargeMultiplier(usedTicks) * .65);
+            if (usedTicks % 8 != 0 || SpellResourcePayment.pay(player, spell,
+                    new SpellCost(0, 0, pulseCost, cost.instability()), SpellResourcePayment.Part.RELEASE)) {
+                SpellExecutor.cast(player, spell, chargeMultiplier(player, usedTicks) * .65);
                 if (usedTicks % 40 == 0) completedCast(player, spell, cost);
             }
             else player.stopUsingItem();
@@ -124,18 +128,28 @@ public final class CraftedSpellItem extends Item {
         }
         int usedTicks = USE_DURATION - timeLeft;
         SpellCost cost = SpellCostCalculator.calculate(spell.definition(), CasterMastery.stats(player));
-        if (!Mana.consume(player, cost.release())) {
-            player.displayClientMessage(Component.literal("Not enough mana (" + (int) Mana.get(player) + ")")
+        if (!SpellResourcePayment.pay(player, spell, cost, SpellResourcePayment.Part.RELEASE)) {
+            player.displayClientMessage(Component.literal("Not enough mana or qi (mana " + (int) Mana.get(player) + ")")
                     .withStyle(ChatFormatting.RED), true);
             return;
         }
-        if (!miscast(player, spell, cost)) SpellExecutor.cast(player, spell, chargeMultiplier(usedTicks));
+        double charge = chargeMultiplier(player, usedTicks);
+        if (!miscast(player, spell, cost)) SpellExecutor.cast(player, spell, charge);
+        if (charge > 1.5) player.hurt(player.damageSources().magic(), (float) ((charge - 1.5) * 8));
         completedCast(player, spell, cost);
         player.displayClientMessage(Component.literal(spell.name() + "  Mana: " + Mana.display(player)), true);
     }
 
-    private static double chargeMultiplier(int usedTicks) {
+    public static double chargeMultiplier(int usedTicks) {
         return Math.max(.6, Math.min(1.5, .6 + usedTicks / 40.0));
+    }
+
+    public static double chargeMultiplier(ServerPlayer player, int usedTicks) {
+        double speed = com.strutton.dynamicmagic.skill.SkillKnowledge.knows(player,
+                com.strutton.dynamicmagic.skill.MagicSkill.QUICK_CASTING) ? 1.25 : 1;
+        double maximum = com.strutton.dynamicmagic.skill.SkillKnowledge.knows(player,
+                com.strutton.dynamicmagic.skill.MagicSkill.OVERCHANNEL) ? 1.8 : 1.5;
+        return Math.max(.6, Math.min(maximum, .6 + usedTicks * speed / 40.0));
     }
 
     @Override
@@ -170,12 +184,17 @@ public final class CraftedSpellItem extends Item {
         }
         tooltip.add(Component.literal("Form " + format(cost.formation()) + "  Release " + format(cost.release())
                 + "  Upkeep " + format(cost.maintenancePerSecond()) + "/s").withStyle(ChatFormatting.AQUA));
+        double kiShare = SpellResourcePayment.kiShare(spell);
+        if (kiShare > 0) tooltip.add(Component.literal("Ki contribution " + format(kiShare * 100)
+                + "% • requires Ki-Mana Fusion • 1 qi replaces 2 mana")
+                .withStyle(ChatFormatting.LIGHT_PURPLE));
         if (cost.instability() > 0) tooltip.add(Component.literal("Instability " + format(cost.instability() * 100) + "%")
                 .withStyle(ChatFormatting.RED));
     }
 
-    private static boolean miscast(ServerPlayer player, CraftedSpell spell, SpellCost cost) {
-        if (cost.instability() <= 0 || player.getRandom().nextDouble() >= cost.instability()) return false;
+    public static boolean miscast(ServerPlayer player, CraftedSpell spell, SpellCost cost) {
+        double instability = SpellResourcePayment.adjustedInstability(player, cost.instability());
+        if (instability <= 0 || player.getRandom().nextDouble() >= instability) return false;
         double roll = player.getRandom().nextDouble();
         if (roll < .34) {
             player.displayClientMessage(Component.literal(spell.name() + " dissipated during formation.").withStyle(ChatFormatting.RED), true);
@@ -196,11 +215,14 @@ public final class CraftedSpellItem extends Item {
         return true;
     }
 
-    private static void completedCast(ServerPlayer player, CraftedSpell spell, SpellCost cost) {
+    public static void completedCast(ServerPlayer player, CraftedSpell spell, SpellCost cost) {
         if (spell.isStudyOnly()) return;
         ComponentKnowledge.recordSuccessfulCast(player, spell);
         ProjectileAccuracy.practice(player, spell);
         CasterMastery.practice(player, spell.definition(), cost.instability());
+        if (com.strutton.dynamicmagic.skill.SkillKnowledge.knows(player,
+                com.strutton.dynamicmagic.skill.MagicSkill.ARCANE_RECOVERY) && !Mana.isUnlimited(player))
+            Mana.set(player, Mana.get(player) + cost.release() * .05);
         double complexity = spell.definition().effects().size() * .2 / spell.allInstructions().size();
         for (SpellInstruction instruction : spell.allInstructions())
             if (instruction.impact() != ImpactType.STUDY)
@@ -208,7 +230,7 @@ public final class CraftedSpellItem extends Item {
                         + instruction.power() * instruction.repetitions() * .1);
     }
 
-    private static boolean isHeldLift(CraftedSpell spell) {
+    public static boolean isHeldLift(CraftedSpell spell) {
         if (spell.programmed() || spell.delivery() != DeliveryType.CONTINUOUS || spell.instructions().size() != 1)
             return false;
         SpellInstruction instruction = spell.instructions().get(0);
@@ -219,4 +241,34 @@ public final class CraftedSpellItem extends Item {
     }
 
     private static String format(double value) { return String.format(java.util.Locale.ROOT, "%.1f", value); }
+
+    /** Shared validation for loose spell items and spells cast from a bound grimoire slot. */
+    public static boolean validate(ServerPlayer player, CraftedSpell spell) {
+        if (!SpellResourcePayment.validate(player, spell, true)) return false;
+        if (!ComponentKnowledge.canUse(player, spell)) {
+            player.displayClientMessage(Component.literal("This spell contains knowledge you have not learned.")
+                    .withStyle(ChatFormatting.RED), true);
+            return false;
+        }
+        if (spell.hasTimeMagic() && (spell.branches().size() > 1 || spell.allInstructions().size() > 1)) {
+            player.displayClientMessage(Component.literal("Global time magic must be the spell's only operation.")
+                    .withStyle(ChatFormatting.RED), true);
+            return false;
+        }
+        if (spell.hasSustainedMagic() && spell.delivery() != DeliveryType.CONTINUOUS) {
+            player.displayClientMessage(Component.literal("Weather control and spirit projection require Continuous delivery.")
+                    .withStyle(ChatFormatting.RED), true);
+            return false;
+        }
+        for (SpellInstruction instruction : spell.allInstructions()) {
+            double cap = ElementMastery.maxForce(player, instruction.element());
+            if (instruction.power() > cap + .001) {
+                player.displayClientMessage(Component.literal("Your " + instruction.element().displayName()
+                        + " mastery only supports force " + String.format(java.util.Locale.ROOT, "%.1f", cap) + ".")
+                        .withStyle(ChatFormatting.RED), true);
+                return false;
+            }
+        }
+        return true;
+    }
 }

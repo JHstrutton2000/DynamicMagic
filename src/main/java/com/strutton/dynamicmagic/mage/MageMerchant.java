@@ -38,6 +38,7 @@ final class MageMerchant implements Merchant {
         }
         for (MagicSkill skill : MagicSkill.values())
             if ((skills & bit(skill.ordinal())) != 0) addSkillOffer(skill, 2, 24, .1f);
+        addManaCrystalOffers();
     }
 
     static void openCreeperScholar(LivingEntity mage, Player player) {
@@ -110,6 +111,45 @@ final class MageMerchant implements Merchant {
                 new ItemStack(DynamicMagic.SKILL_TOMES.get(skill).get()), maxUses, merchantXp, priceMultiplier));
     }
 
+    private void addManaCrystalOffers() {
+        offers.add(new MerchantOffer(new ItemCost(Items.EMERALD,
+                varied("crystal:lesser", 8, 4, 16)),
+                new ItemStack(DynamicMagic.MANA_CRYSTAL_LESSER.get()), 8, 8, .04f));
+        offers.add(new MerchantOffer(new ItemCost(Items.EMERALD,
+                varied("crystal:common", 24, 12, 42)),
+                new ItemStack(DynamicMagic.MANA_CRYSTAL_COMMON.get()), 5, 14, .06f));
+        if (unit(mix(priceSeed ^ stableHash("crystal:greater:stock"))) > .45)
+            offers.add(new MerchantOffer(new ItemCost(Items.EMERALD,
+                    varied("crystal:greater", 52, 32, 64)),
+                    Optional.of(new ItemCost(Items.EMERALD_BLOCK,
+                            varied("crystal:greater:blocks", 3, 1, 7))),
+                    new ItemStack(DynamicMagic.MANA_CRYSTAL_GREATER.get()), 2, 24, .10f));
+        if (unit(mix(priceSeed ^ stableHash("crystal:pristine:stock"))) > .88)
+            offers.add(new MerchantOffer(new ItemCost(Items.EMERALD, 64),
+                    Optional.of(new ItemCost(Items.EMERALD_BLOCK,
+                            varied("crystal:pristine:blocks", 12, 7, 18))),
+                    new ItemStack(DynamicMagic.MANA_CRYSTAL_PRISTINE.get()), 1, 40, .15f));
+        if (com.strutton.dynamicmagic.compat.SoloLevelingIntegration.active()) {
+            int firstTier = (int) Math.floor(unit(mix(priceSeed ^ stableHash("slr:crystal:first"))) * 3);
+            int secondTier = 3 + (int) Math.floor(unit(mix(priceSeed ^ stableHash("slr:crystal:second"))) * 3);
+            addSoloCrystalPurchase(firstTier);
+            addSoloCrystalPurchase(secondTier);
+        }
+    }
+
+    /** Mages buy two rank bands of SLR crystals; their stock and prices vary by individual mage. */
+    private void addSoloCrystalPurchase(int tier) {
+        String rank = new String[]{"e", "d", "c", "b", "a", "s"}[Math.clamp(tier, 0, 5)];
+        net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("sololeveling", "mana_crystal_" + rank))
+                .ifPresent(item -> {
+                    int count = varied("slr:crystal:" + rank + ":count", tier < 3 ? 4 : 1, 1, tier < 3 ? 8 : 3);
+                    int payout = varied("slr:crystal:" + rank + ":payout", 2 + tier * tier * 2, 1, 64);
+                    offers.add(new MerchantOffer(new ItemCost(item, count),
+                            new ItemStack(Items.EMERALD, payout), 12, 6 + tier * 4, .04f));
+                });
+    }
+
     /** Base value reflects how difficult and powerful an element is to acquire. */
     private static int elementValue(Element element) {
         return switch (element) {
@@ -122,6 +162,7 @@ final class MageMerchant implements Merchant {
             case PLASMA -> 46;
             case SPIRIT, UNDEAD -> 48;
             case BLOOD -> 52;
+            case KI -> 56;
             case SPACE -> 55;
             case DIVINE -> 58;
             case TIME -> 62;

@@ -30,6 +30,7 @@ public final class StudyKnowledge {
                                      Element observed, double power) {
         if (beginElements(player, Set.of(observed), level.getGameTime()).isEmpty()) return false;
         ComponentKnowledge.studyElement(player, observed, power);
+        DimensionKnowledge.observeBlock(player, level, pos);
         return true;
     }
 
@@ -39,6 +40,7 @@ public final class StudyKnowledge {
         double resonance = Math.max(.5, power) * (state.is(Blocks.END_GATEWAY) ? 5
                 : state.is(Blocks.END_PORTAL) ? 4 : state.is(Blocks.NETHER_PORTAL) ? 2 : 1.5);
         ComponentKnowledge.studyElement(player, Element.SPACE, resonance);
+        DimensionKnowledge.observePortal(player, level, pos);
         player.displayClientMessage(Component.literal(String.format(java.util.Locale.ROOT,
                 "Portal study: gained %.1f Space insight.", resonance))
                 .withStyle(ChatFormatting.LIGHT_PURPLE), true);
@@ -46,6 +48,7 @@ public final class StudyKnowledge {
     }
 
     public static boolean studyEntity(ServerPlayer player, LivingEntity target, Element observed, double power) {
+        power *= com.strutton.dynamicmagic.compat.SoloLevelingIntegration.studyMultiplier(target);
         DragonProfile dragon = DragonIntegration.profile(target);
         if (target.getType() == EntityType.ENDERMAN) {
             if (beginElements(player, Set.of(Element.SPACE), player.serverLevel().getGameTime()).isEmpty()) return false;
@@ -55,12 +58,14 @@ public final class StudyKnowledge {
         if (!dragon.dragon()) {
             if (beginElements(player, Set.of(observed), player.serverLevel().getGameTime()).isEmpty()) return false;
             ComponentKnowledge.studyElement(player, observed, power);
+            DimensionKnowledge.observeEntity(player, target);
             return true;
         }
         EnumSet<Element> available = beginElements(player, dragon.elements(), player.serverLevel().getGameTime());
         if (available.isEmpty()) return false;
         double dividedPower = power / Math.max(1, dragon.elements().size());
         for (Element element : available) ComponentKnowledge.studyElement(player, element, dividedPower);
+        DimensionKnowledge.observeEntity(player, target);
         DragonProgression.study(player, dragon, power);
         String elements = dragon.elements().stream().map(Element::displayName).sorted().collect(Collectors.joining(", "));
         String weaknesses = dragon.weaknesses().stream().map(Element::displayName).sorted().collect(Collectors.joining(", "));
@@ -74,6 +79,7 @@ public final class StudyKnowledge {
             to.getPersistentData().put(COOLDOWNS, from.getPersistentData().get(COOLDOWNS).copy());
         if (from.getPersistentData().contains(ENDERMAN_STUDY))
             to.getPersistentData().putDouble(ENDERMAN_STUDY, from.getPersistentData().getDouble(ENDERMAN_STUDY));
+        DimensionKnowledge.copy(from, to);
     }
 
     public static double endermanProgress(ServerPlayer player) {

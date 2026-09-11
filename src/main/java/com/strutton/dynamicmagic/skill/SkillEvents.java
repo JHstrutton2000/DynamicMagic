@@ -4,6 +4,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.living.LivingExperienceDropEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
+import net.minecraft.tags.DamageTypeTags;
+import com.strutton.dynamicmagic.mana.Mana;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 
@@ -21,5 +24,18 @@ public final class SkillEvents {
             player.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 220, 0, false, false, true));
         if (SkillKnowledge.knows(player, MagicSkill.WATER_BREATHING))
             player.addEffect(new MobEffectInstance(MobEffects.WATER_BREATHING, 220, 0, false, false, true));
+    }
+
+    @SubscribeEvent public static void defensiveSkills(LivingIncomingDamageEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player) || event.getAmount() <= 0) return;
+        float amount = event.getAmount();
+        if (SkillKnowledge.knows(player, MagicSkill.WARDING)
+                && event.getSource().is(DamageTypeTags.BYPASSES_ARMOR)) amount *= .85f;
+        if (SkillKnowledge.knows(player, MagicSkill.MANA_SHIELD) && Mana.get(player) > 0) {
+            float absorbed = amount * .25f;
+            double affordable = Math.min(absorbed, Mana.get(player));
+            if (Mana.consume(player, affordable)) amount -= (float) affordable;
+        }
+        event.setAmount(Math.max(0, amount));
     }
 }

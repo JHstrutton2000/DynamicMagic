@@ -59,6 +59,7 @@ public final class ElementGrimoireItem extends Item {
         return switch (element) {
             case FIRE, WATER, EARTH, AIR, LIGHTNING -> 6;
             case ICE, LIGHT, SHADOW, SAND, METAL, GLASS -> 12;
+            case KI -> 24;
             default -> 18;
         };
     }

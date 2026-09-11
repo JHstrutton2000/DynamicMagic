@@ -39,6 +39,8 @@ public final class DynamicMagic {
     public static final String MOD_ID = "dynamicmagic";
     public static final Logger LOGGER = LogUtils.getLogger();
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MOD_ID);
+    public static final net.neoforged.neoforge.registries.DeferredRegister.Blocks BLOCKS = net.neoforged.neoforge.registries.DeferredRegister.createBlocks(MOD_ID);
+    public static final DeferredRegister<net.minecraft.world.level.block.entity.BlockEntityType<?>> BLOCK_ENTITY_TYPES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, MOD_ID);
     public static final DeferredRegister<CreativeModeTab> TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
     public static final DeferredRegister<EntityType<?>> ENTITY_TYPES =
@@ -83,6 +85,13 @@ public final class DynamicMagic {
             () -> new SpellbookItem(new Item.Properties().stacksTo(1)));
     public static final DeferredItem<Item> CRAFTED_SPELL = ITEMS.register("crafted_spell",
             () -> new CraftedSpellItem(new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<Item> MANA_CRYSTAL_LESSER = ITEMS.register("lesser_mana_crystal", () -> new com.strutton.dynamicmagic.item.ManaCrystalItem(100, new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<Item> MANA_CRYSTAL_COMMON = ITEMS.register("mana_crystal", () -> new com.strutton.dynamicmagic.item.ManaCrystalItem(500, new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<Item> MANA_CRYSTAL_GREATER = ITEMS.register("greater_mana_crystal", () -> new com.strutton.dynamicmagic.item.ManaCrystalItem(2000, new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<Item> MANA_CRYSTAL_PRISTINE = ITEMS.register("pristine_mana_crystal", () -> new com.strutton.dynamicmagic.item.ManaCrystalItem(10000, new Item.Properties().stacksTo(1)));
+    public static final net.neoforged.neoforge.registries.DeferredBlock<net.minecraft.world.level.block.Block> SPELL_AUTOMATION_BLOCK = BLOCKS.register("spell_automation_block", () -> new com.strutton.dynamicmagic.block.SpellAutomationBlock(net.minecraft.world.level.block.state.BlockBehaviour.Properties.of().strength(3.5f).requiresCorrectToolForDrops()));
+    public static final DeferredItem<net.minecraft.world.item.BlockItem> SPELL_AUTOMATION_BLOCK_ITEM = ITEMS.registerSimpleBlockItem("spell_automation_block", SPELL_AUTOMATION_BLOCK);
+    public static final DeferredHolder<net.minecraft.world.level.block.entity.BlockEntityType<?>, net.minecraft.world.level.block.entity.BlockEntityType<com.strutton.dynamicmagic.block.SpellAutomationBlockEntity>> SPELL_AUTOMATION_BLOCK_ENTITY = BLOCK_ENTITY_TYPES.register("spell_automation_block", () -> net.minecraft.world.level.block.entity.BlockEntityType.Builder.of(com.strutton.dynamicmagic.block.SpellAutomationBlockEntity::new, SPELL_AUTOMATION_BLOCK.get()).build(null));
     public static final DeferredItem<Item> VAMPIRE_CURE = ITEMS.register("vampire_cure",
             () -> new com.strutton.dynamicmagic.item.VampireCureItem(new Item.Properties().stacksTo(16)));
     public static final DeferredItem<Item> VILLAGE_MAGE_SPAWN_EGG = ITEMS.register("village_mage_spawn_egg",
@@ -114,6 +123,9 @@ public final class DynamicMagic {
                     .displayItems((parameters, output) -> {
                         output.accept(SPELL_FOCUS.get());
                         output.accept(SPELLBOOK.get());
+                        output.accept(MANA_CRYSTAL_LESSER.get()); output.accept(MANA_CRYSTAL_COMMON.get());
+                        output.accept(MANA_CRYSTAL_GREATER.get()); output.accept(MANA_CRYSTAL_PRISTINE.get());
+                        output.accept(SPELL_AUTOMATION_BLOCK_ITEM.get());
                         output.accept(VAMPIRE_CURE.get());
                         output.accept(VILLAGE_MAGE_SPAWN_EGG.get());
                         output.accept(EXPLOSION_TOME.get());
@@ -134,6 +146,8 @@ public final class DynamicMagic {
 
     public DynamicMagic(IEventBus modBus, ModContainer container) {
         ITEMS.register(modBus);
+        BLOCKS.register(modBus);
+        BLOCK_ENTITY_TYPES.register(modBus);
         TABS.register(modBus);
         ENTITY_TYPES.register(modBus);
         POTIONS.register(modBus);
@@ -156,6 +170,7 @@ public final class DynamicMagic {
         NeoForge.EVENT_BUS.register(SkillEvents.class);
         NeoForge.EVENT_BUS.register(ProgramSpellController.class);
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.magic.RuneMagicController.class);
+        NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.magic.DimensionDoorController.class);
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.vampire.VampireEvents.class);
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.mage.VillageMageEvents.class);
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.mage.MorphMageEvents.class);
@@ -164,6 +179,14 @@ public final class DynamicMagic {
         NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.skill.ExplosionProgression.class);
         if (net.neoforged.fml.ModList.get().isLoaded("aoa3"))
             NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.compat.AdventOfAscensionIntegration.class);
+        if (net.neoforged.fml.ModList.get().isLoaded("apothic_spawners"))
+            NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.compat.ApotheosisIntegration.class);
+        if (net.neoforged.fml.ModList.get().isLoaded("irons_spellbooks"))
+            com.strutton.dynamicmagic.compat.IronSpellsIntegration.register(NeoForge.EVENT_BUS);
+        if (net.neoforged.fml.ModList.get().isLoaded("sololeveling")) {
+            NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.compat.SoloLevelingIntegration.class);
+            com.strutton.dynamicmagic.compat.SoloLevelingIntegration.register(NeoForge.EVENT_BUS);
+        }
         if (net.neoforged.fml.ModList.get().isLoaded("morph")) {
             NeoForge.EVENT_BUS.register(com.strutton.dynamicmagic.morph.MorphV2Integration.class);
             com.strutton.dynamicmagic.morph.MorphV2Integration.registerMorphEvent(NeoForge.EVENT_BUS);

@@ -48,7 +48,8 @@ public final class SpellExecutor {
     private SpellExecutor() {}
 
     public static void cast(ServerPlayer player, CraftedSpell spell, double charge) {
-        castInternal(player, spell, charge, null, false, false);
+        CraftedSpell ranged = SpellResourcePayment.applyRangeSkills(player, spell);
+        castInternal(player, ranged, charge * SpellResourcePayment.powerMultiplier(player, ranged), null, false, false);
     }
 
     public static void castProgram(ServerPlayer player, CraftedSpell spell, SpellBranch branch,
@@ -56,7 +57,8 @@ public final class SpellExecutor {
         CraftedSpell branchSpell = spell.branchSpell(branch);
         boolean direct = branch.targetMode() == ProgramTargetMode.DETECTED_ENTITY;
         LivingEntity directed = branch.targetMode() == ProgramTargetMode.CASTER_AIM ? null : detected;
-        castInternal(player, branchSpell, charge, directed, direct, false);
+        branchSpell = SpellResourcePayment.applyRangeSkills(player, branchSpell);
+        castInternal(player, branchSpell, charge * SpellResourcePayment.powerMultiplier(player, branchSpell), directed, direct, false);
     }
 
     /** Public operation hook used by GameTests and other data-driven runtimes. */
@@ -79,9 +81,11 @@ public final class SpellExecutor {
                                      boolean direct, boolean suppressWorldMagic) {
         if (spell.instructions().size() > 1) {
             boolean combinedWorldMagic = !suppressWorldMagic && applyCombinedWorldMagic(player, spell, charge);
+            boolean combinedExplosion = !suppressWorldMagic && spell.instructions().stream().anyMatch(i -> i.impact() == ImpactType.EXPLODE)
+                    && applyCombinedExplosion(player, spell, charge);
             for (SpellInstruction instruction : spell.instructions())
                 castInternal(player, spell.withOnlyInstruction(instruction), charge, detected, direct,
-                        suppressWorldMagic || combinedWorldMagic);
+                        suppressWorldMagic || combinedWorldMagic || combinedExplosion);
             return;
         }
         ServerLevel level = player.serverLevel();
@@ -105,7 +109,9 @@ public final class SpellExecutor {
             return;
         }
         if (spell.impact() == ImpactType.TELEPORT) {
-            if (player.isShiftKeyDown()) TeleportLocations.openMenu(player);
+            if (spell.source() == SourceType.SUMMON && spell.element() == Element.SPACE)
+                DimensionDoorController.create(player, instruction.range(), Math.max(10, instruction.durationSeconds()));
+            else if (player.isShiftKeyDown()) TeleportLocations.openMenu(player);
             else TeleportLocations.teleportWhereLooking(player, instruction.range());
             return;
         }
@@ -117,6 +123,10 @@ public final class SpellExecutor {
             applyFootingMagic(player, spell.element(), power);
         if (instruction.targetMode() == TargetMode.SELF || spell.delivery() == DeliveryType.SELF
                 || spell.form() == SpellForm.CLOAK) {
+            if (spell.impact() == ImpactType.STORE_ENTITY) {
+                MagicItemStorage.stashInventoryAndKill(player);
+                return;
+            }
             castAroundCaster(player, spell, power);
             return;
         }
@@ -130,7 +140,7 @@ public final class SpellExecutor {
                             entity -> entity != player && entity != detected && entity.isAlive()))
                         applyRepeatedImpact(player, nearby, spell, power);
                 }
-                if (spell.impact() == ImpactType.EXPLODE && spell.element() != Element.DIVINE) {
+                if (!suppressWorldMagic && spell.impact() == ImpactType.EXPLODE && spell.element() != Element.DIVINE) {
                     for (int i = 0; i < instruction.repetitions(); i++)
                         level.explode(player, detected.getX(), detected.getY(), detected.getZ(),
                                 (float) Math.min(6, .5 + power * .55), Level.ExplosionInteraction.NONE);
@@ -151,9 +161,12 @@ public final class SpellExecutor {
         }
         double range = instruction.range();
         Vec3 start = player.getEyePosition();
-        Vec3 direction = detected == null ? direction(player, spell.direction())
-                : detected.getEyePosition().subtract(start).normalize();
-        if (detected == null && spell.delivery() == DeliveryType.PROJECTILE)
+        LivingEntity aimedTarget = detected;
+        if (instruction.targetMode() == TargetMode.TRACKED && aimedTarget == null)
+            aimedTarget = trackingTarget(player, instruction.range());
+        Vec3 direction = aimedTarget == null ? direction(player, spell.direction())
+                : aimedTarget.getEyePosition().subtract(start).normalize();
+        if (aimedTarget == null && spell.delivery() == DeliveryType.PROJECTILE)
             direction = ProjectileAccuracy.applySpread(player, direction);
         Vec3 rayEnd = start.add(direction.scale(range));
         ClipContext.Fluid fluidMode = isWorldMagic(spell.impact()) ? ClipContext.Fluid.ANY : ClipContext.Fluid.NONE;
@@ -201,7 +214,7 @@ public final class SpellExecutor {
             }
         }
 
-        if (spell.impact() == ImpactType.EXPLODE && spell.element() != Element.DIVINE) {
+        if (!suppressWorldMagic && spell.impact() == ImpactType.EXPLODE && spell.element() != Element.DIVINE) {
             for (int i = 0; i < instruction.repetitions(); i++)
                 level.explode(player, end.x, end.y, end.z, (float) Math.min(6, .5 + power * .55), Level.ExplosionInteraction.NONE);
         }
@@ -215,6 +228,21 @@ public final class SpellExecutor {
                 level.setBlockAndUpdate(firePos, Blocks.FIRE.defaultBlockState());
         }
         playSound(level, player, spell.element());
+    }
+
+    private static LivingEntity trackingTarget(ServerPlayer player, double range) {
+        Vec3 eye = player.getEyePosition(), look = player.getLookAngle();
+        LivingEntity best = null; double bestScore = Double.MAX_VALUE;
+        for (LivingEntity candidate : player.serverLevel().getEntitiesOfClass(LivingEntity.class,
+                player.getBoundingBox().inflate(range), entity -> entity != player && entity.isAlive())) {
+            Vec3 offset = candidate.getEyePosition().subtract(eye); double distance = offset.length();
+            if (distance <= 0 || distance > range) continue;
+            double alignment = look.dot(offset.scale(1.0 / distance));
+            if (alignment < .72) continue;
+            double score = distance * (2.0 - alignment);
+            if (score < bestScore) { bestScore = score; best = candidate; }
+        }
+        return best;
     }
 
     private static void castAroundCaster(ServerPlayer player, CraftedSpell spell, double power) {
@@ -260,13 +288,13 @@ public final class SpellExecutor {
         } else if (instruction.element() == Element.FIRE && (wet || target.getTicksFrozen() > 0)) {
             target.getPersistentData().remove("DynamicMagicWetUntil");
             target.setTicksFrozen(0);
-            target.hurt(player.damageSources().magic(), elementalDamage(player, target, instruction.element(), (float) Math.max(1, power)));
+            target.hurt(player.damageSources().magic(), elementalDamage(player, target, instruction.element(), spell.delivery(), (float) Math.max(1, power)));
             player.serverLevel().sendParticles(ParticleTypes.CLOUD, target.getX(), target.getY() + 1,
                     target.getZ(), 20, .4, .6, .4, .08);
         }
         if (spell.element() == Element.DIVINE && isUndead(target)
                 && spell.impact() != ImpactType.RESURRECT) {
-            target.hurt(player.damageSources().magic(), elementalDamage(player, target, Element.DIVINE, (float) (3 + power * 3)));
+            target.hurt(player.damageSources().magic(), elementalDamage(player, target, Element.DIVINE, spell.delivery(), (float) (3 + power * 3)));
             return;
         }
         // Divine energy cannot be weaponized against living creatures, but reacts violently with undead.
@@ -279,10 +307,10 @@ public final class SpellExecutor {
         }
         switch (spell.impact()) {
             case DAMAGE, EXPLODE -> target.hurt(player.damageSources().playerAttack(player),
-                    elementalDamage(player, target, instruction.element(), (float) (2 + power * 2)));
+                    elementalDamage(player, target, instruction.element(), spell.delivery(), (float) (2 + power * 2)));
             case IGNITE -> {
                 target.hurt(player.damageSources().playerAttack(player),
-                        elementalDamage(player, target, instruction.element(), (float) (1 + power)));
+                        elementalDamage(player, target, instruction.element(), spell.delivery(), (float) (1 + power)));
                 target.igniteForSeconds((float) instruction.durationSeconds());
             }
             case PHYSICS -> {
@@ -311,7 +339,7 @@ public final class SpellExecutor {
             }
             case FREEZE -> {
                 target.hurt(player.damageSources().playerAttack(player),
-                        elementalDamage(player, target, instruction.element(), (float) (1 + power)));
+                        elementalDamage(player, target, instruction.element(), spell.delivery(), (float) (1 + power)));
                 target.setTicksFrozen(Math.min(target.getTicksRequiredToFreeze() + durationTicks,
                         target.getTicksFrozen() + (int) (durationTicks * power)));
             }
@@ -329,13 +357,13 @@ public final class SpellExecutor {
             case ROOT -> target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, durationTicks, 9));
             case CHAIN -> {
                 target.hurt(player.damageSources().lightningBolt(),
-                        elementalDamage(player, target, instruction.element(), (float)(2 + power * 2.5)));
+                        elementalDamage(player, target, instruction.element(), spell.delivery(), (float)(2 + power * 2.5)));
                 player.serverLevel().sendParticles(ParticleTypes.ELECTRIC_SPARK, target.getX(), target.getY() + 1, target.getZ(), 18, .4, .7, .4, .12);
                 int chained = 0;
                 for (LivingEntity next : player.serverLevel().getEntitiesOfClass(LivingEntity.class,
                         target.getBoundingBox().inflate(3 + power), entity -> entity != player && entity != target && entity.isAlive())) {
                     next.hurt(player.damageSources().lightningBolt(),
-                            elementalDamage(player, next, instruction.element(), (float)(1 + power * 1.25)));
+                            elementalDamage(player, next, instruction.element(), spell.delivery(), (float)(1 + power * 1.25)));
                     player.serverLevel().sendParticles(ParticleTypes.ELECTRIC_SPARK, next.getX(), next.getY() + 1, next.getZ(), 10, .3, .5, .3, .1);
                     if (++chained >= Math.max(1, (int)power)) break;
                 }
@@ -354,7 +382,7 @@ public final class SpellExecutor {
                 if (target instanceof ServerPlayer victim
                         && com.strutton.dynamicmagic.skill.SkillKnowledge.knows(victim,
                         com.strutton.dynamicmagic.skill.MagicSkill.BLOOD_WARD)) amount *= .35f;
-                amount = elementalDamage(player, target, instruction.element(), amount);
+                amount = elementalDamage(player, target, instruction.element(), spell.delivery(), amount);
                 if (target.hurt(player.damageSources().magic(), amount)) player.heal(amount * .65f);
             }
             case TURN_UNDEAD -> {
@@ -493,6 +521,10 @@ public final class SpellExecutor {
             if (level.getBlockState(adjacent).is(Blocks.FIRE)) level.removeBlock(adjacent, false);
             return;
         }
+        if (isHot(spell.element())) {
+            trySmelt(level, struck, state, power);
+            tryIgnite(level, hit, power);
+        }
         if (spell.impact() != ImpactType.TRANSMUTE_BLOCK) return;
         BlockPos placement = placement(level, hit);
         if (spell.element() == Element.WATER) {
@@ -505,6 +537,72 @@ public final class SpellExecutor {
         } else if (spell.element() == Element.ICE && state.getFluidState().is(FluidTags.WATER) && power >= 2) {
             level.setBlockAndUpdate(struck, Blocks.ICE.defaultBlockState());
         }
+    }
+
+    private static boolean applyCombinedExplosion(ServerPlayer player, CraftedSpell spell, double charge) {
+        SpellInstruction explosion = spell.instructions().stream().filter(i -> i.impact() == ImpactType.EXPLODE).findFirst().orElse(null);
+        if (explosion == null) return false;
+        Vec3 start = player.getEyePosition();
+        Vec3 end = start.add(direction(player, explosion.direction()).scale(explosion.range()));
+        HitResult hit = player.serverLevel().clip(new ClipContext(start, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.ANY, player));
+        Vec3 center = hit.getLocation();
+        var forces = ElementInteractions.effectiveForces(spell.instructions(), charge);
+        double blast = forces.values().stream().mapToDouble(Double::doubleValue).sum();
+        player.serverLevel().explode(player, center.x, center.y, center.z, (float) Math.min(7, .5 + explosion.power() * charge * .6), Level.ExplosionInteraction.NONE);
+        applyElementalExplosionTerrain(player, center, forces, Math.min(8, 1.5 + explosion.radius() + Math.sqrt(blast) * .55));
+        return true;
+    }
+
+    private static void applyElementalExplosionTerrain(ServerPlayer player, Vec3 center, java.util.Map<Element, Double> forces, double radius) {
+        ServerLevel level = player.serverLevel();
+        BlockPos origin = BlockPos.containing(center);
+        double fire = forces.getOrDefault(Element.FIRE, 0.0) + forces.getOrDefault(Element.SCORCH, 0.0)
+                + forces.getOrDefault(Element.LAVA, 0.0) + forces.getOrDefault(Element.PLASMA, 0.0);
+        double water = forces.getOrDefault(Element.WATER, 0.0), earth = forces.getOrDefault(Element.EARTH, 0.0);
+        double air = forces.getOrDefault(Element.AIR, 0.0);
+        int r = (int) Math.ceil(radius);
+        for (BlockPos cursor : BlockPos.betweenClosed(origin.offset(-r, -r, -r), origin.offset(r, r, r))) {
+            BlockPos pos = cursor.immutable();
+            if (Vec3.atCenterOf(pos).distanceToSqr(center) > radius * radius || level.random.nextDouble() > .72) continue;
+            BlockState state = level.getBlockState(pos);
+            if (water > 0 && state.is(Blocks.FIRE)) level.removeBlock(pos, false);
+            if (fire > 0 && !state.isAir()) { trySmelt(level, pos, state, fire); if (fire >= 2.5 && level.random.nextDouble() < Math.min(.9, fire * .09)) tryIgniteAbove(level, pos); }
+            if (water >= 5 && state.canBeReplaced() && level.random.nextDouble() < Math.min(.55, water * .035)) level.setBlockAndUpdate(pos, Blocks.WATER.defaultBlockState());
+            if (fire >= 8 && state.canBeReplaced() && level.random.nextDouble() < Math.min(.18, fire * .008)) level.setBlockAndUpdate(pos, Blocks.LAVA.defaultBlockState());
+            if (earth >= 2 && state.canBeReplaced() && level.getBlockState(pos.below()).isCollisionShapeFullBlock(level, pos.below()))
+                level.setBlockAndUpdate(pos, level.random.nextDouble() < .55 ? Blocks.DIRT.defaultBlockState() : Blocks.STONE.defaultBlockState());
+            if (air >= 3 && !state.isAir() && state.getDestroySpeed(level, pos) >= 0 && state.getDestroySpeed(level, pos) <= 1.5f
+                    && level.random.nextDouble() < Math.min(.45, air * .04)) level.destroyBlock(pos, false, player);
+            level.sendParticles(particle(dominant(forces)), pos.getX() + .5, pos.getY() + .5, pos.getZ() + .5, 1, .2, .2, .2, .02);
+        }
+        if (air > 0) for (LivingEntity entity : level.getEntitiesOfClass(LivingEntity.class, new AABB(center, center).inflate(radius), e -> e != player)) {
+            Vec3 push = entity.position().subtract(center).normalize().scale(.15 + air * .09); entity.push(push.x, Math.max(.08, push.y), push.z); entity.hurtMarked = true;
+        }
+    }
+
+    private static Element dominant(java.util.Map<Element, Double> forces) {
+        return forces.entrySet().stream().max(java.util.Map.Entry.comparingByValue()).map(java.util.Map.Entry::getKey).orElse(Element.ARCANE);
+    }
+
+    private static void trySmelt(ServerLevel level, BlockPos pos, BlockState state, double power) {
+        if (power < 1 || level.random.nextDouble() > Math.min(.95, .10 + power * .11)) return;
+        BlockState result = state.is(Blocks.COBBLESTONE) ? Blocks.STONE.defaultBlockState()
+                : state.is(Blocks.SAND) || state.is(Blocks.RED_SAND) ? Blocks.GLASS.defaultBlockState()
+                : state.is(Blocks.CLAY) ? Blocks.TERRACOTTA.defaultBlockState()
+                : state.is(Blocks.STONE_BRICKS) ? Blocks.CRACKED_STONE_BRICKS.defaultBlockState() : null;
+        if (result != null) level.setBlockAndUpdate(pos, result);
+    }
+
+    private static void tryIgnite(ServerLevel level, BlockHitResult hit, double power) {
+        if (power < .5 || level.random.nextDouble() > Math.min(.95, .3 + power * .16)) return;
+        BlockPos struck = hit.getBlockPos(), fire = struck.relative(hit.getDirection());
+        if ((level.getBlockState(struck).ignitedByLava() || level.getBlockState(struck).isFlammable(level, struck, hit.getDirection()))
+                && level.getBlockState(fire).isAir() && Blocks.FIRE.defaultBlockState().canSurvive(level, fire)) level.setBlockAndUpdate(fire, Blocks.FIRE.defaultBlockState());
+    }
+    private static void tryIgniteAbove(ServerLevel level, BlockPos struck) {
+        BlockPos fire = struck.above();
+        if (level.getBlockState(struck).ignitedByLava() && level.getBlockState(fire).isAir()
+                && Blocks.FIRE.defaultBlockState().canSurvive(level, fire)) level.setBlockAndUpdate(fire, Blocks.FIRE.defaultBlockState());
     }
 
     /** Resolves Fire/Water/Ice together so the result depends on force ratio instead of operation order. */
@@ -587,6 +685,8 @@ public final class SpellExecutor {
     }
 
     private static Element observedElement(LivingEntity target) {
+        Element soloElement = com.strutton.dynamicmagic.compat.SoloLevelingIntegration.elementForEntity(target);
+        if (soloElement != null) return soloElement;
         if (target.getType() == EntityType.ENDERMAN) return Element.SPACE;
         if (isUndead(target)) return Element.UNDEAD;
         if (target instanceof Animal || target instanceof Villager) return Element.SPIRIT;
@@ -682,6 +782,7 @@ public final class SpellExecutor {
             case UNDEAD -> ParticleTypes.SCULK_SOUL;
             case SAND -> ParticleTypes.POOF;
             case BLOOD -> ParticleTypes.DAMAGE_INDICATOR;
+            case KI -> ParticleTypes.ENCHANTED_HIT;
         };
     }
 
@@ -705,6 +806,7 @@ public final class SpellExecutor {
             case UNDEAD -> SoundEvents.ZOMBIE_AMBIENT;
             case SAND -> SoundEvents.SAND_BREAK;
             case BLOOD -> SoundEvents.WITHER_HURT;
+            case KI -> SoundEvents.PLAYER_ATTACK_STRONG;
         };
         level.playSound(null, player.blockPosition(), sound, SoundSource.PLAYERS, .8f, 1f);
     }
@@ -752,13 +854,16 @@ public final class SpellExecutor {
                 || com.strutton.dynamicmagic.vampire.Vampirism.isVampire(target);
     }
 
-    private static float elementalDamage(ServerPlayer caster, LivingEntity target, Element element, float amount) {
+    private static float elementalDamage(ServerPlayer caster, LivingEntity target, Element element,
+                                         DeliveryType delivery, float amount) {
         if (element == Element.WATER && target.getType() == EntityType.BLAZE) amount *= 2.0f;
         if (com.strutton.dynamicmagic.vampire.Vampirism.isVampire(target)) {
             if (isHot(element)) amount *= 1.75f;
             else if (element == Element.DIVINE || element == Element.LIGHT) amount *= 1.5f;
         }
-        return com.strutton.dynamicmagic.dragon.DragonIntegration.adjustSpellDamage(caster, target, element, amount);
+        amount = com.strutton.dynamicmagic.dragon.DragonIntegration.adjustSpellDamage(caster, target, element, amount);
+        amount = com.strutton.dynamicmagic.compat.ApotheosisIntegration.adjustSpellDamage(caster, element, delivery, amount);
+        return com.strutton.dynamicmagic.compat.IronSpellsIntegration.adjustDynamicSpellDamage(caster, target, element, amount);
     }
 
     private static void summon(ServerPlayer player, Element element, Vec3 position, int durationTicks) {

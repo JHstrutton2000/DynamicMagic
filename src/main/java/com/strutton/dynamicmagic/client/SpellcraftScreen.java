@@ -6,6 +6,7 @@ import com.strutton.dynamicmagic.network.CreateSpellPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -22,6 +23,8 @@ public final class SpellcraftScreen extends Screen {
     private final KnowledgeSnapshot knowledge;
     private final List<CraftedSpell> savedSpells;
     private final boolean editMode;
+    private final boolean memoryOnly;
+    private final String originalName;
     private final List<Double> forceCaps;
     private final List<SpellInstruction> standalone = new ArrayList<>();
     private final List<BranchDraft> branches = new ArrayList<>();
@@ -37,11 +40,18 @@ public final class SpellcraftScreen extends Screen {
 
     public SpellcraftScreen(KnowledgeSnapshot knowledge, CasterStats previewStats,
                             List<CraftedSpell> savedSpells, CraftedSpell editing, List<Double> forceCaps) {
+        this(knowledge, previewStats, savedSpells, editing, forceCaps, editing != null, false);
+    }
+    public SpellcraftScreen(KnowledgeSnapshot knowledge, CasterStats previewStats,
+                            List<CraftedSpell> savedSpells, CraftedSpell editing, List<Double> forceCaps,
+                            boolean editHeld, boolean memoryOnly) {
         super(Component.literal("Spellcrafting"));
         this.knowledge = knowledge;
         this.previewStats = previewStats;
         this.savedSpells = List.copyOf(savedSpells);
-        this.editMode = editing != null;
+        this.editMode = editHeld;
+        this.memoryOnly = memoryOnly;
+        this.originalName = editing == null ? "" : editing.name();
         this.draftName = editing == null ? "Custom Spell" : editing.name();
         this.forceCaps = List.copyOf(forceCaps);
         source = editing == null ? SourceType.CREATE : editing.source();
@@ -64,6 +74,9 @@ public final class SpellcraftScreen extends Screen {
         int favoritesWidth = 230, builderLeft = left + favoritesWidth + 14;
         int builderWidth = panelWidth - favoritesWidth - 14, half = builderWidth / 2 - 2;
         int top = Math.max(6, (height - 438) / 2);
+        addRenderableWidget(Button.builder(Component.literal("Slots"), b -> ClientSpellbook.openLoadout()).bounds(left, top, 58, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Craft"), b -> {}).bounds(left + 62, top, 58, 20).build()).active = false;
+        addRenderableWidget(Button.builder(Component.literal("Elements"), b -> ClientSpellbook.openKnowledge()).bounds(left + 124, top, 76, 20).build());
         int favoriteIndex = 0;
         for (CraftedSpell favorite : concat(PremadeSpells.FAVORITES, savedSpells)) {
             if (!canUse(favorite) || favoriteIndex >= 20) continue;
@@ -101,12 +114,13 @@ public final class SpellcraftScreen extends Screen {
         addRenderableWidget(cycleButton(builderLeft, top + 194, half, () -> "Element: " + current().element().displayName(), this::cycleElement));
         addRenderableWidget(cycleButton(builderLeft + half + 4, top + 194, half, () -> "Impact: " + current().impact().displayName(), this::cycleImpact));
         addRenderableWidget(cycleButton(builderLeft, top + 217, half, () -> "Direction: " + current().direction().displayName(), () -> replace(current().withDirection(next(filter(CastDirection.values(), knowledge::knows), current().direction())))));
-        addRenderableWidget(cycleButton(builderLeft + half + 4, top + 217, half, () -> "Target: " + current().targetMode().displayName(), () -> replace(current().withTargetMode(next(TargetMode.values(), current().targetMode())))));
-        addRenderableWidget(cycleButton(builderLeft, top + 240, half, () -> "Force: " + format(current().power()) + " / " + format(maxForce()), () -> { double value = current().power() + .5; replace(current().withPower(value > maxForce() ? .5 : value)); }));
+        addRenderableWidget(cycleButton(builderLeft + half + 4, top + 217, half, () -> "Target: " + current().targetMode().displayName(), () -> replace(current().withTargetMode(next(availableTargetModes(), current().targetMode())))));
+        addRenderableWidget(valueSlider(builderLeft, top + 240, half, .5, maxForce(), () -> current().power(),
+                value -> replace(current().withPower(value)), () -> (current().impact() == ImpactType.EXPLODE ? "Explosion force: " : "Mana force: ") + format(current().power())));
         addRenderableWidget(cycleButton(builderLeft + half + 4, top + 240, half, () -> "Repeat: " + current().repetitions() + "×", () -> replace(current().withRepetitions(isUtility(current().impact()) ? 1 : current().repetitions() % 8 + 1))));
-        addRenderableWidget(cycleButton(builderLeft, top + 263, half, () -> "Range: " + format(current().range()) + "m", () -> { double value = current().range() + 4; replace(current().withRange(value > 64 ? 4 : value)); }));
-        addRenderableWidget(cycleButton(builderLeft + half + 4, top + 263, half, () -> "Radius: " + format(current().radius()) + "m", () -> { double value = current().radius() + 1; replace(current().withRadius(value > 12 ? 0 : value)); }));
-        addRenderableWidget(cycleButton(builderLeft, top + 286, half, () -> "Duration: " + format(current().durationSeconds()) + "s", () -> replace(current().withDuration(nextDuration(current().durationSeconds())))));
+        addRenderableWidget(valueSlider(builderLeft, top + 263, half, 4, 64, () -> current().range(), value -> replace(current().withRange(value)), () -> "Range: " + format(current().range()) + "m"));
+        addRenderableWidget(valueSlider(builderLeft + half + 4, top + 263, half, 0, 12, () -> current().radius(), value -> replace(current().withRadius(value)), () -> "Radius: " + format(current().radius()) + "m"));
+        addRenderableWidget(valueSlider(builderLeft, top + 286, half, .25, 60, () -> current().durationSeconds(), value -> replace(current().withDuration(value)), () -> "Duration: " + format(current().durationSeconds()) + "s"));
         physicsButton = cycleButton(builderLeft + half + 4, top + 286, half,
                 () -> current().impact() == ImpactType.APPLY_EFFECT ? "Effect: " + current().potionEffect().displayName()
                         : "Physics: " + current().physicsOperation().displayName(),
@@ -120,7 +134,7 @@ public final class SpellcraftScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Add Action"), b -> addStep()).bounds(builderLeft, top + 309, third, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Duplicate"), b -> duplicateStep()).bounds(builderLeft + third + 4, top + 309, third, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Remove"), b -> removeStep()).bounds(builderLeft + (third + 4) * 2, top + 309, third, 20).build());
-        addRenderableWidget(Button.builder(Component.literal(editMode ? "Save Changes" : "Create Spell"), b -> request(currentSpell())).bounds(builderLeft, top + 407, builderWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(editMode || memoryOnly ? "Save Changes" : "Create Spell"), b -> request(currentSpell())).bounds(builderLeft, top + 407, builderWidth, 20).build());
         updateButtons();
     }
 
@@ -131,6 +145,19 @@ public final class SpellcraftScreen extends Screen {
     }
     private Button cycleButton(int x, int y, int w, java.util.function.Supplier<String> label, Runnable cycle) {
         return Button.builder(Component.literal(label.get()), b -> { cycle.run(); refreshScreen(); }).bounds(x, y, w, 20).build();
+    }
+    private AbstractSliderButton valueSlider(int x, int y, int w, double min, double max,
+                                             java.util.function.DoubleSupplier getter,
+                                             java.util.function.DoubleConsumer setter,
+                                             java.util.function.Supplier<String> label) {
+        double initial = Math.max(0, Math.min(1, (getter.getAsDouble() - min) / Math.max(.001, max - min)));
+        return new AbstractSliderButton(x, y, w, 20, Component.literal(label.get()), initial) {
+            @Override protected void updateMessage() { setMessage(Component.literal(label.get())); }
+            @Override protected void applyValue() {
+                double stepped = Math.round((min + value * (max - min)) * 4) / 4.0;
+                setter.accept(stepped); updateMessage();
+            }
+        };
     }
     private void toggleProgram() {
         if (programmed) programmed = false;
@@ -156,6 +183,8 @@ public final class SpellcraftScreen extends Screen {
     private void selectStep(int delta) { selectedInstruction = Math.floorMod(selectedInstruction + delta, actions().size()); refreshScreen(); }
     private void cycleElement() {
         Element element = next(filter(Element.values(), knowledge::knows), current().element());
+        if (actions().stream().anyMatch(action -> action != current() && action.element() != element)
+                && !knowsSkill(com.strutton.dynamicmagic.skill.MagicSkill.MANA_COMBINING)) return;
         SpellInstruction changed = current().withElement(element);
         if (!Arrays.asList(allowedImpactsFor(element)).contains(changed.impact()) || !knowledge.knows(changed.impact())) changed = changed.withImpact(first(allowedImpactsFor(element), knowledge::knows));
         replace(changed.withPower(Math.min(changed.power(), forceCap(element))));
@@ -196,7 +225,11 @@ public final class SpellcraftScreen extends Screen {
                         knowledge.knows(b.condition()) && knowledge.knows(b.targetMode())))
                 && (spell.source() != SourceType.SUMMON || knowledge.canSummonDimension());
     }
-    private void request(CraftedSpell spell) { PacketDistributor.sendToServer(new CreateSpellPayload(spell, editMode)); }
+    private void request(CraftedSpell spell) { PacketDistributor.sendToServer(new CreateSpellPayload(spell, editMode, memoryOnly, originalName)); }
+    private boolean knowsSkill(com.strutton.dynamicmagic.skill.MagicSkill skill) {
+        var data = ClientSpellbook.data();
+        return data != null && (data.skills() & (1L << skill.ordinal())) != 0;
+    }
 
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         graphics.fill(0, 0, width, height, 0xF0101620);
@@ -218,7 +251,9 @@ public final class SpellcraftScreen extends Screen {
                     builderLeft, top + 336 + row++ * 10, i == selectedInstruction ? 0xFFE08A : 0xB8C8D8, false);
         }
         SpellCost cost = SpellCostCalculator.calculate(currentSpell().definition(), previewStats);
-        graphics.drawCenteredString(font, "Form " + format(cost.formation()) + "  Cast " + format(cost.release()) + "  Runtime " + format(cost.maintenancePerSecond()) + "/s",
+        double kiShare = SpellResourcePayment.kiShare(currentSpell());
+        String resourceHint = kiShare > 0 ? "  • Ki share " + format(kiShare * 100) + "%" : "";
+        graphics.drawCenteredString(font, "Form " + format(cost.formation()) + "  Cast " + format(cost.release()) + "  Runtime " + format(cost.maintenancePerSecond()) + "/s" + resourceHint,
                 builderLeft + builderWidth / 2, top + 393, 0xBFEFFF);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
@@ -226,12 +261,21 @@ public final class SpellcraftScreen extends Screen {
     @Override public boolean isPauseScreen() { return false; }
     private SourceType[] availableSources() { return knowledge.canSummonDimension() ? SourceType.values() : new SourceType[]{SourceType.CREATE}; }
     private double maxForce() { return forceCap(current().element()); }
+    private TargetMode[] availableTargetModes() {
+        return ClientSpellbook.knowsSkill(com.strutton.dynamicmagic.skill.MagicSkill.TRACKING)
+                ? TargetMode.values() : new TargetMode[]{TargetMode.AIM, TargetMode.SELF};
+    }
     private double forceCap(Element element) { return element.ordinal() < forceCaps.size() ? forceCaps.get(element.ordinal()) : 3; }
     private static ImpactType[] allowedImpactsFor(Element element) {
         ImpactType[] base = baseAllowedImpactsFor(element);
-        if (java.util.Arrays.asList(base).contains(ImpactType.APPLY_EFFECT)) return base;
-        ImpactType[] result = java.util.Arrays.copyOf(base, base.length + 1);
-        result[base.length] = ImpactType.APPLY_EFFECT;
+        boolean hasEffect = java.util.Arrays.asList(base).contains(ImpactType.APPLY_EFFECT);
+        boolean hasExplosion = java.util.Arrays.asList(base).contains(ImpactType.EXPLODE);
+        int extra = (hasEffect ? 0 : 1) + (hasExplosion ? 0 : 1);
+        if (extra == 0) return base;
+        ImpactType[] result = java.util.Arrays.copyOf(base, base.length + extra);
+        int at = base.length;
+        if (!hasEffect) result[at++] = ImpactType.APPLY_EFFECT;
+        if (!hasExplosion) result[at] = ImpactType.EXPLODE;
         return result;
     }
 
@@ -259,6 +303,8 @@ public final class SpellcraftScreen extends Screen {
         if (element == Element.BLOOD) return new ImpactType[]{ImpactType.DRAIN_LIFE, ImpactType.HEAL,
                 ImpactType.CONVERT_HEALTH_TO_MANA, ImpactType.DAMAGE, ImpactType.APPLY_EFFECT,
                 ImpactType.PHYSICS, ImpactType.STUDY};
+        if (element == Element.KI) return new ImpactType[]{ImpactType.DAMAGE, ImpactType.PHYSICS,
+                ImpactType.PROTECT, ImpactType.APPLY_EFFECT, ImpactType.STUDY};
         return new ImpactType[]{ImpactType.DAMAGE, ImpactType.EXPLODE, ImpactType.IGNITE, ImpactType.PHYSICS, ImpactType.FREEZE, ImpactType.PROTECT, ImpactType.CONJURE_ITEM, ImpactType.STUDY};
     }
     private static boolean isUtility(ImpactType impact) { return impact == ImpactType.STORE_ITEM || impact == ImpactType.STORE_ENTITY || impact == ImpactType.RELEASE_STORAGE || impact == ImpactType.CONTRACT_ENTITY || impact == ImpactType.SUMMON_CONTRACT || impact == ImpactType.CONJURE_ITEM || impact == ImpactType.STOP_TIME || impact == ImpactType.SPEED_TIME || impact == ImpactType.SLOW_TIME || impact == ImpactType.TRANSMUTE_BLOCK || impact == ImpactType.WEATHER_RAIN || impact == ImpactType.WEATHER_STORM || impact == ImpactType.SUMMON_LIGHTNING || impact == ImpactType.DETECT_ORES || impact == ImpactType.STUDY || impact == ImpactType.RESURRECT || impact == ImpactType.ASTRAL_PROJECTION || impact == ImpactType.DETECT_LIFE || impact == ImpactType.FERTILITY || impact == ImpactType.PACIFY_UNDEAD || impact == ImpactType.CORRUPT_LIFE || impact == ImpactType.DETECT_UNDEAD; }

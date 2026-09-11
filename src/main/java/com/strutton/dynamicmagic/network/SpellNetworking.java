@@ -24,7 +24,7 @@ public final class SpellNetworking {
     private SpellNetworking() {}
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("8");
+        PayloadRegistrar registrar = event.registrar("9");
         registrar.playToServer(
                 CreateSpellPayload.TYPE,
                 CreateSpellPayload.STREAM_CODEC,
@@ -43,6 +43,94 @@ public final class SpellNetworking {
                 SpellNetworking::handleMorphMageSyncClient);
         registrar.playToServer(SummonStoredEntityPayload.TYPE, SummonStoredEntityPayload.STREAM_CODEC,
                 SpellNetworking::handleSummonEntity);
+        registrar.playToServer(BindSpellPayload.TYPE, BindSpellPayload.STREAM_CODEC, SpellNetworking::handleBindSpell);
+        registrar.playToServer(DeleteSpellPayload.TYPE, DeleteSpellPayload.STREAM_CODEC, SpellNetworking::handleDeleteSpell);
+        registrar.playToServer(CastBoundSpellPayload.TYPE, CastBoundSpellPayload.STREAM_CODEC, SpellNetworking::handleCastBoundSpell);
+        registrar.playToServer(SaveElementPresetPayload.TYPE, SaveElementPresetPayload.STREAM_CODEC, SpellNetworking::handleSaveElementPreset);
+        registrar.playToServer(SpatialStorageHeartbeatPayload.TYPE, SpatialStorageHeartbeatPayload.STREAM_CODEC, SpellNetworking::handleSpatialHeartbeat);
+        registrar.playToClient(CloseSpatialStoragePayload.TYPE, CloseSpatialStoragePayload.STREAM_CODEC, SpellNetworking::handleCloseSpatialClient);
+        registrar.playToClient(OpenSpellNodePayload.TYPE, OpenSpellNodePayload.STREAM_CODEC, SpellNetworking::handleOpenSpellNodeClient);
+        registrar.playToServer(ConfigureSpellNodePayload.TYPE, ConfigureSpellNodePayload.STREAM_CODEC, SpellNetworking::handleConfigureSpellNode);
+    }
+
+    public static void openSpellbook(ServerPlayer player, CraftedSpell editing) {
+        ItemStack book = com.strutton.dynamicmagic.magic.SpellbookBindings.heldBook(player);
+        java.util.List<Double> masteries = java.util.Arrays.stream(Element.values())
+                .map(element -> ElementMastery.experience(player, element)).toList();
+        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                new OpenSpellbookPayload(ComponentKnowledge.snapshot(player).elements(),
+                        ComponentKnowledge.snapshot(player).forms(), ComponentKnowledge.snapshot(player).deliveries(),
+                        ComponentKnowledge.snapshot(player).impacts(), ComponentKnowledge.snapshot(player).directions(),
+                        ComponentKnowledge.snapshot(player).conditions(), ComponentKnowledge.snapshot(player).programming(),
+                        ComponentKnowledge.snapshot(player).programmingMastery(), ComponentKnowledge.snapshot(player).maxProgramBranches(),
+                        CasterMastery.stats(player).control(), CasterMastery.stats(player).efficiency(),
+                        SavedSpellLibrary.spells(player), editing, ElementMastery.forceCaps(player),
+                        book.isEmpty() ? java.util.stream.IntStream.range(0, 6).mapToObj(i -> java.util.List.<String>of()).toList()
+                                : com.strutton.dynamicmagic.magic.SpellbookBindings.names(book),
+                        com.strutton.dynamicmagic.skill.SkillKnowledge.mask(player), masteries, !book.isEmpty(),
+                        com.strutton.dynamicmagic.magic.ElementPresetLibrary.presets(player)));
+    }
+
+    private static void handleBindSpell(BindSpellPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player)) return;
+            ItemStack book = com.strutton.dynamicmagic.magic.SpellbookBindings.heldBook(player);
+            if (book.isEmpty()) return;
+            boolean changed = payload.spellName().isBlank()
+                    ? com.strutton.dynamicmagic.magic.SpellbookBindings.clear(book, payload.slot())
+                    : com.strutton.dynamicmagic.magic.SpellbookBindings.bind(player, book, payload.slot(), payload.spellName(), payload.append());
+            if (!changed) player.displayClientMessage(Component.literal("That binding is unavailable.").withStyle(ChatFormatting.RED), true);
+            openSpellbook(player, null);
+        });
+    }
+
+    private static void handleDeleteSpell(DeleteSpellPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player)) return;
+            if (SavedSpellLibrary.remove(player, payload.spellName())) {
+                ItemStack book = com.strutton.dynamicmagic.magic.SpellbookBindings.heldBook(player);
+                if (!book.isEmpty()) com.strutton.dynamicmagic.magic.SpellbookBindings.forget(book, payload.spellName());
+                player.displayClientMessage(Component.literal("Forgot " + payload.spellName()).withStyle(ChatFormatting.GRAY), true);
+            }
+            openSpellbook(player, null);
+        });
+    }
+
+    private static void handleCastBoundSpell(CastBoundSpellPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player) || payload.slot() < 0 || payload.slot() >= 5) return;
+            ItemStack book = com.strutton.dynamicmagic.magic.SpellbookBindings.heldBook(player);
+            if (book.isEmpty()) return;
+            if (payload.pressed()) com.strutton.dynamicmagic.magic.BoundSpellCasting.begin(player, book,
+                    com.strutton.dynamicmagic.magic.SpellbookBindings.heldHand(player), payload.slot());
+            else {
+                com.strutton.dynamicmagic.magic.BoundSpellCasting.release(player);
+                player.stopUsingItem();
+            }
+        });
+    }
+
+    private static void handleSaveElementPreset(SaveElementPresetPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player) || payload.preset() == null) return;
+            boolean changed = payload.delete()
+                    ? com.strutton.dynamicmagic.magic.ElementPresetLibrary.remove(player, payload.preset().name())
+                    : com.strutton.dynamicmagic.magic.ElementPresetLibrary.save(player, payload.preset());
+            if (!changed) player.displayClientMessage(Component.literal("Learn Mana Combining and every selected element first.")
+                    .withStyle(ChatFormatting.RED), true);
+            openSpellbook(player, null);
+        });
+    }
+    private static void handleSpatialHeartbeat(SpatialStorageHeartbeatPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> { if (context.player() instanceof ServerPlayer player && !com.strutton.dynamicmagic.mana.Mana.consume(player, .5))
+            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, new CloseSpatialStoragePayload()); });
+    }
+    private static void handleCloseSpatialClient(CloseSpatialStoragePayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> net.minecraft.client.Minecraft.getInstance().setScreen(null));
+    }
+    private static void handleOpenSpellNodeClient(OpenSpellNodePayload payload, IPayloadContext context) { ClientPayloadHandler.openSpellNode(payload, context); }
+    private static void handleConfigureSpellNode(ConfigureSpellNodePayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> { if (!(context.player() instanceof ServerPlayer player) || player.distanceToSqr(payload.pos().getX()+.5,payload.pos().getY()+.5,payload.pos().getZ()+.5)>64) return; if (player.serverLevel().getBlockEntity(payload.pos()) instanceof com.strutton.dynamicmagic.block.SpellAutomationBlockEntity node) { if (payload.ejectSlot() >= 0) node.eject(player,payload.ejectSlot()); else node.setSpellFromMemory(player,payload.spellName()); }});
     }
 
     private static void handleOpenSpellbookClient(OpenSpellbookPayload payload, IPayloadContext context) {
@@ -74,9 +162,7 @@ public final class SpellNetworking {
                     return;
                 }
             }
-            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
-                    new OpenSpellbookPayload(ComponentKnowledge.snapshot(player), CasterMastery.stats(player),
-                            SavedSpellLibrary.spells(player), editing, ElementMastery.forceCaps(player)));
+            openSpellbook(player, editing);
         });
     }
 
@@ -91,6 +177,14 @@ public final class SpellNetworking {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) return;
             CraftedSpell spell = payload.spell();
+            if (!com.strutton.dynamicmagic.magic.SpellResourcePayment.validate(player, spell, true)) return;
+            if (spell.allInstructions().stream().map(com.strutton.dynamicmagic.magic.SpellInstruction::element)
+                    .distinct().count() > 1 && !com.strutton.dynamicmagic.skill.SkillKnowledge.knows(player,
+                    com.strutton.dynamicmagic.skill.MagicSkill.MANA_COMBINING)) {
+                player.displayClientMessage(Component.literal("Combining elements requires the Mana Combining skill.")
+                        .withStyle(ChatFormatting.RED), true);
+                return;
+            }
             if (!ComponentKnowledge.canUse(player, spell)) {
                 player.displayClientMessage(Component.literal("That spell uses magical knowledge you have not learned.")
                         .withStyle(ChatFormatting.RED), true);
@@ -142,7 +236,7 @@ public final class SpellNetworking {
                         .withStyle(ChatFormatting.RED), true);
                 return;
             }
-            ItemStack stack;
+            ItemStack stack = ItemStack.EMPTY;
             if (payload.editHeld()) {
                 stack = CraftedSpell.read(player.getMainHandItem()) != null ? player.getMainHandItem()
                         : CraftedSpell.read(player.getOffhandItem()) != null ? player.getOffhandItem() : ItemStack.EMPTY;
@@ -152,16 +246,18 @@ public final class SpellNetworking {
                     return;
                 }
                 spell.writeTo(stack);
-            } else {
+            } else if (!payload.memoryOnly()) {
                 stack = new ItemStack(DynamicMagic.CRAFTED_SPELL.get());
                 spell.writeTo(stack);
             }
             boolean newProgram = spell.programmed() && SavedSpellLibrary.spells(player).stream()
                     .noneMatch(saved -> saved.name().equalsIgnoreCase(spell.name()));
-            com.strutton.dynamicmagic.magic.SavedSpellLibrary.remember(player, spell);
+            if (payload.memoryOnly() && !payload.originalName().isBlank()
+                    && !payload.originalName().equalsIgnoreCase(spell.name())) SavedSpellLibrary.remove(player, payload.originalName());
+            SavedSpellLibrary.remember(player, spell);
             if (newProgram) ProgrammingKnowledge.practice(player, 2 + spell.branches().size());
-            if (!payload.editHeld() && !player.getInventory().add(stack)) player.drop(stack, false);
-            player.displayClientMessage(Component.literal((payload.editHeld() ? "Updated " : "Created ") + spell.name()).withStyle(ChatFormatting.AQUA), true);
+            if (!payload.editHeld() && !payload.memoryOnly() && !player.getInventory().add(stack)) player.drop(stack, false);
+            player.displayClientMessage(Component.literal((payload.editHeld() ? "Updated " : payload.memoryOnly() ? "Saved " : "Created ") + spell.name()).withStyle(ChatFormatting.AQUA), true);
         }).exceptionally(error -> {
             DynamicMagic.LOGGER.error("Failed to create spell", error);
             return null;

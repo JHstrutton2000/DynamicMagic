@@ -22,14 +22,20 @@ import java.util.List;
 /** A personal pocket dimension stored with the player. Items are stored as ItemEntity NBT. */
 public final class MagicStorage {
     private static final String KEY = "DynamicMagicStorage";
-    public static final int CAPACITY = 32;
+    public static final int BASE_CAPACITY = 9;
     private MagicStorage() {}
 
     public static boolean store(ServerPlayer player, Entity entity, boolean itemsOnly) {
         if (entity == player || entity instanceof ServerPlayer || (itemsOnly && !(entity instanceof ItemEntity))) return false;
+        if (com.strutton.dynamicmagic.compat.SoloLevelingIntegration.isProtectedEntity(entity)) {
+            player.displayClientMessage(Component.literal("Gate creatures, bosses, and shadows resist Spatial storage.")
+                    .withStyle(ChatFormatting.RED), true);
+            return false;
+        }
         ListTag entries = entries(player);
-        if (entries.size() >= CAPACITY) {
-            player.displayClientMessage(Component.literal("Magic storage is full (" + CAPACITY + ").")
+        int capacity = capacity(player);
+        if (entries.size() >= capacity) {
+            player.displayClientMessage(Component.literal("Spatial backpack is full (" + capacity + ").")
                     .withStyle(ChatFormatting.RED), true);
             return false;
         }
@@ -49,7 +55,7 @@ public final class MagicStorage {
         entries.add(entry);
         saveEntries(player, entries);
         entity.discard();
-        player.displayClientMessage(Component.literal("Stored " + entry.getString("Name") + " (" + entries.size() + "/" + CAPACITY + ")")
+        player.displayClientMessage(Component.literal("Stored " + entry.getString("Name") + " (" + entries.size() + "/" + capacity + ")")
                 .withStyle(ChatFormatting.LIGHT_PURPLE), true);
         return true;
     }
@@ -80,12 +86,16 @@ public final class MagicStorage {
         }
         entries.remove(index);
         saveEntries(player, entries);
-        player.displayClientMessage(Component.literal("Released " + entry.getString("Name") + " (" + entries.size() + "/" + CAPACITY + ")")
+        player.displayClientMessage(Component.literal("Released " + entry.getString("Name") + " (" + entries.size() + "/" + capacity(player) + ")")
                 .withStyle(ChatFormatting.LIGHT_PURPLE), true);
         return true;
     }
 
     public static int size(ServerPlayer player) { return entries(player).size(); }
+    public static int capacity(ServerPlayer player) {
+        return Math.min(54, BASE_CAPACITY + (int) Math.floor(Math.sqrt(
+                com.strutton.dynamicmagic.magic.ElementMastery.experience(player, com.strutton.dynamicmagic.magic.Element.SPACE)) * 1.5));
+    }
 
     public static void openMenu(ServerPlayer player) {
         List<String> names = new ArrayList<>();

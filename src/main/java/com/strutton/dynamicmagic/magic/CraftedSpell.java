@@ -306,6 +306,16 @@ public record CraftedSpell(
     public boolean hasSustainedMagic() { return allInstructions().stream().anyMatch(instruction -> isSustainedImpact(instruction.impact())); }
     public SpellInstruction timeInstruction() { return allInstructions().stream().filter(instruction -> isTimeImpact(instruction.impact())).findFirst().orElse(null); }
     public boolean usesElement(Element value) { return allInstructions().stream().anyMatch(instruction -> instruction.element() == value); }
+    public CraftedSpell mapInstructions(java.util.function.UnaryOperator<SpellInstruction> mapper) {
+        List<SpellInstruction> mapped = instructions.stream().map(mapper).toList();
+        List<SpellBranch> mappedBranches = branches.stream().map(branch -> new SpellBranch(branch.condition(),
+                branch.intervalTicks(), branch.detectionRange(), branch.targetMode(),
+                branch.instructions().stream().map(mapper).toList())).toList();
+        SpellInstruction first = mapped.get(0);
+        return new CraftedSpell(name, source, first.element(), form, delivery, first.impact(), first.power(),
+                first.direction(), programmed, condition, intervalTicks, detectionRange, first.targetMode(),
+                programTargetMode, first.physicsOperation(), mapped, mappedBranches);
+    }
     public CraftedSpell withOnlyInstruction(SpellInstruction instruction) {
         return new CraftedSpell(name, source, instruction.element(), form, delivery, instruction.impact(), instruction.power(),
                 instruction.direction(), false, ConditionType.ALWAYS, intervalTicks, detectionRange, instruction.targetMode(),

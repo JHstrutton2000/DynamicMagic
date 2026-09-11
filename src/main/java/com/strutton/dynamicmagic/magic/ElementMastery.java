@@ -13,11 +13,15 @@ public final class ElementMastery {
         return player.getPersistentData().getCompound(KEY).getDouble(element.name());
     }
     public static double maxForce(ServerPlayer player, Element element) {
-        return Math.min(10, 3.0 + Math.sqrt(experience(player, element)) * .22);
+        return Math.min(12, 3.0 + Math.sqrt(experience(player, element)) * .22
+                + com.strutton.dynamicmagic.compat.SoloLevelingIntegration.forceBonus(player, element));
     }
     public static void practice(ServerPlayer player, Element element, double complexity) {
         CompoundTag values = player.getPersistentData().getCompound(KEY).copy();
-        values.putDouble(element.name(), values.getDouble(element.name()) + Math.max(.25, complexity));
+        double multiplier = com.strutton.dynamicmagic.skill.SkillKnowledge.knows(player,
+                com.strutton.dynamicmagic.skill.MagicSkill.ELEMENTAL_SAVANT) ? 1.25 : 1;
+        multiplier *= com.strutton.dynamicmagic.compat.SoloLevelingIntegration.learningMultiplier(player, element);
+        values.putDouble(element.name(), values.getDouble(element.name()) + Math.max(.25, complexity) * multiplier);
         player.getPersistentData().put(KEY, values);
     }
     public static List<Double> forceCaps(ServerPlayer player) {

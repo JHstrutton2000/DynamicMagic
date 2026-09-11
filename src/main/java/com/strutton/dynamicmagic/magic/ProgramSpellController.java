@@ -35,8 +35,9 @@ public final class ProgramSpellController {
             return;
         }
         SpellCost cost = SpellCostCalculator.calculate(spell.definition(), CasterMastery.stats(player));
-        if (!Mana.consume(player, cost.formation())) {
-            player.displayClientMessage(Component.literal("Not enough mana to activate " + spell.name()).withStyle(ChatFormatting.RED), true);
+        if (!SpellResourcePayment.validate(player, spell, true)) return;
+        if (!SpellResourcePayment.pay(player, spell, cost, SpellResourcePayment.Part.FORMATION)) {
+            player.displayClientMessage(Component.literal("Not enough mana or qi to activate " + spell.name()).withStyle(ChatFormatting.RED), true);
             return;
         }
         programs.put(key, new ActiveProgram(spell, cost));
@@ -63,7 +64,8 @@ public final class ProgramSpellController {
             while (programs.hasNext()) {
                 ActiveProgram active = programs.next();
                 CraftedSpell spell = active.spell();
-                if (player.tickCount % 20 == 0 && !Mana.consume(player, active.cost().maintenancePerSecond())) {
+                if (player.tickCount % 20 == 0 && !SpellResourcePayment.pay(player, spell,
+                        active.cost(), SpellResourcePayment.Part.MAINTENANCE)) {
                     stop(player, spell); programs.remove(); continue;
                 }
                 boolean ended = false;
@@ -77,7 +79,8 @@ public final class ProgramSpellController {
                     LivingEntity detected = match.detected();
                     CraftedSpell branchSpell = spell.branchSpell(branch);
                     SpellCost branchCost = SpellCostCalculator.calculate(branchSpell.definition(), CasterMastery.stats(player));
-                    if (!Mana.consume(player, branchCost.release())) {
+                    if (!SpellResourcePayment.pay(player, branchSpell, branchCost,
+                            SpellResourcePayment.Part.RELEASE)) {
                         stop(player, spell);
                         programs.remove();
                         ended = true;

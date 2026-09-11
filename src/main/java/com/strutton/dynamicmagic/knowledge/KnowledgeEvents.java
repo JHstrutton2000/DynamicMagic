@@ -23,6 +23,7 @@ public final class KnowledgeEvents {
             CasterMastery.copy(original, replacement);
             MagicContracts.copy(original, replacement);
             SavedSpellLibrary.copy(original, replacement);
+            com.strutton.dynamicmagic.magic.ElementPresetLibrary.copy(original, replacement);
             com.strutton.dynamicmagic.magic.TeleportLocations.copy(original, replacement);
             com.strutton.dynamicmagic.skill.SkillKnowledge.copy(original, replacement);
             com.strutton.dynamicmagic.magic.ElementMastery.copy(original, replacement);

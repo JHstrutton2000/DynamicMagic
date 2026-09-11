@@ -17,7 +17,11 @@ public final class ManaEvents {
             double hungerFactor = player.getFoodData().getFoodLevel() / 20.0;
             double skillFactor = com.strutton.dynamicmagic.skill.SkillKnowledge.knows(player,
                     com.strutton.dynamicmagic.skill.MagicSkill.MANA_WELL) ? 1.75 : 1.0;
+            if (player.getHealth() < player.getMaxHealth() / 3.0f
+                    && com.strutton.dynamicmagic.skill.SkillKnowledge.knows(player,
+                    com.strutton.dynamicmagic.skill.MagicSkill.SECOND_WIND)) skillFactor += .65;
             skillFactor += elementalAttunementBonus(player);
+            skillFactor *= com.strutton.dynamicmagic.compat.SoloLevelingIntegration.regenerationMultiplier(player);
             // Runs twice per second: 0.5% of maximum per pulse = 1%/second at full hunger.
             Mana.set(player, Mana.get(player) + Mana.max(player) * .005 * hungerFactor * skillFactor);
         }

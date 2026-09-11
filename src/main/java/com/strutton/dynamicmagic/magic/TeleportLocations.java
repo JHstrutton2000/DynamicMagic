@@ -26,7 +26,10 @@ import net.minecraft.world.phys.Vec3;
 /** Nine player-named teleport marks, displayed through a vanilla chest-compatible menu. */
 public final class TeleportLocations {
     private static final String KEY = "DynamicMagicTeleportLocations";
+    private static final String GATE_KEY = "DynamicMagicLastGateAnchor";
     private static final int CAPACITY = 9;
+    private static final int GATE_SLOT = 9;
+    private static final int MENU_SIZE = 18;
     private TeleportLocations() {}
 
     public static int save(ServerPlayer player, String requestedName) {
@@ -58,6 +61,12 @@ public final class TeleportLocations {
                 Component.literal("Teleport Marks")));
     }
 
+    /** SLR gate realms are intentionally returnable with Spatial magic, even though their entrances expire. */
+    public static void recordGateAnchor(ServerPlayer player) {
+        CompoundTag location = location(player, "Return to Last Gate");
+        player.getPersistentData().put(GATE_KEY, location);
+    }
+
     public static boolean teleportWhereLooking(ServerPlayer player, double range) {
         Vec3 start = player.getEyePosition();
         Vec3 end = start.add(player.getLookAngle().scale(Math.max(2, range)));
@@ -85,6 +94,8 @@ public final class TeleportLocations {
     private static CompoundTag locations(ServerPlayer player) { return player.getPersistentData().getCompound(KEY); }
     public static void copy(ServerPlayer from, ServerPlayer to) {
         if (from.getPersistentData().contains(KEY)) to.getPersistentData().put(KEY, from.getPersistentData().get(KEY).copy());
+        if (from.getPersistentData().contains(GATE_KEY))
+            to.getPersistentData().put(GATE_KEY, from.getPersistentData().get(GATE_KEY).copy());
     }
 
     private static final class TeleportMenu extends ChestMenu {
@@ -93,7 +104,7 @@ public final class TeleportLocations {
             this(id, inventory, player, contents(player));
         }
         private TeleportMenu(int id, Inventory inventory, ServerPlayer player, SimpleContainer contents) {
-            super(MenuType.GENERIC_9x1, id, inventory, contents, 1);
+            super(MenuType.GENERIC_9x2, id, inventory, contents, 2);
             this.player = player;
         }
         @Override public void clicked(int slot, int button, ClickType clickType, net.minecraft.world.entity.player.Player ignored) {
@@ -101,13 +112,17 @@ public final class TeleportLocations {
                 player.closeContainer();
                 return;
             }
-            if (slot >= CAPACITY) super.clicked(slot, button, clickType, ignored);
+            if (slot == GATE_SLOT && teleport(player, player.getPersistentData().getCompound(GATE_KEY))) {
+                player.closeContainer();
+                return;
+            }
+            if (slot >= MENU_SIZE) super.clicked(slot, button, clickType, ignored);
         }
         @Override public ItemStack quickMoveStack(net.minecraft.world.entity.player.Player player, int index) { return ItemStack.EMPTY; }
     }
 
     private static SimpleContainer contents(ServerPlayer player) {
-        SimpleContainer container = new SimpleContainer(CAPACITY);
+        SimpleContainer container = new SimpleContainer(MENU_SIZE);
         CompoundTag locations = locations(player);
         for (int i = 0; i < CAPACITY; i++) {
             CompoundTag location = locations.getCompound(Integer.toString(i));
@@ -117,11 +132,22 @@ public final class TeleportLocations {
                     .withStyle(ChatFormatting.LIGHT_PURPLE));
             container.setItem(i, marker);
         }
+        CompoundTag gate = player.getPersistentData().getCompound(GATE_KEY);
+        if (!gate.isEmpty()) {
+            ItemStack marker = new ItemStack(Items.ENDER_EYE);
+            marker.set(DataComponents.CUSTOM_NAME, Component.literal("Return to Last Gate")
+                    .withStyle(ChatFormatting.DARK_PURPLE));
+            container.setItem(GATE_SLOT, marker);
+        }
         return container;
     }
 
     private static boolean teleportSaved(ServerPlayer player, int slot) {
         CompoundTag location = locations(player).getCompound(Integer.toString(slot));
+        return teleport(player, location);
+    }
+
+    private static boolean teleport(ServerPlayer player, CompoundTag location) {
         if (location.isEmpty()) return false;
         ResourceLocation id = ResourceLocation.tryParse(location.getString("Dimension"));
         if (id == null) return false;
@@ -130,5 +156,17 @@ public final class TeleportLocations {
         player.teleportTo(destination, location.getDouble("X"), location.getDouble("Y"), location.getDouble("Z"),
                 location.getFloat("Yaw"), location.getFloat("Pitch"));
         return true;
+    }
+
+    private static CompoundTag location(ServerPlayer player, String name) {
+        CompoundTag location = new CompoundTag();
+        location.putString("Name", name);
+        location.putString("Dimension", player.serverLevel().dimension().location().toString());
+        location.putDouble("X", player.getX());
+        location.putDouble("Y", player.getY());
+        location.putDouble("Z", player.getZ());
+        location.putFloat("Yaw", player.getYRot());
+        location.putFloat("Pitch", player.getXRot());
+        return location;
     }
 }

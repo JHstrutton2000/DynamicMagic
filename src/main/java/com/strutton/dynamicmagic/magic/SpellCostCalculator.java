@@ -53,6 +53,7 @@ public final class SpellCostCalculator {
             case SPIRIT, UNDEAD -> 2.25;
             case SAND -> 1.25;
             case BLOOD -> 2.2;
+            case KI -> 1.8;
         };
     }
 }

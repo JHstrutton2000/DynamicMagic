@@ -277,6 +277,8 @@ public final class ComponentKnowledge {
             case BLOOD -> new Object[]{ImpactType.DRAIN_LIFE, ImpactType.HEAL,
                     ImpactType.CONVERT_HEALTH_TO_MANA, ImpactType.APPLY_EFFECT, SpellForm.CLOAK,
                     DeliveryType.CONTINUOUS, ImpactType.PHYSICS, ImpactType.CONJURE_ITEM};
+            case KI -> new Object[]{ImpactType.PHYSICS, ImpactType.PROTECT, ImpactType.DAMAGE,
+                    SpellForm.BEAM, SpellForm.BURST, DeliveryType.TOUCH, DeliveryType.CONTINUOUS};
         };
         for (Object candidate : candidates) {
             String learned = technique(player, candidate, unlock);
@@ -308,6 +310,7 @@ public final class ComponentKnowledge {
             case LIGHT, SHADOW, ARCANE, PLASMA, STORM -> 2.0;
             case DIVINE, SPIRIT, UNDEAD, BLOOD -> 2.5;
             case SPACE, TIME -> 3.0;
+            case KI -> 2.5;
         };
     }
     private static double studyRequirement(Element element) {

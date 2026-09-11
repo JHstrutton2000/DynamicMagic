@@ -1,7 +1,7 @@
 package com.strutton.dynamicmagic.magic;
 public enum Element {
     FIRE, WATER, AIR, EARTH, ICE, LIGHTNING, LIGHT, SHADOW, ARCANE, SPACE, TIME, DIVINE,
-    METAL, GLASS, PLASMA, QUICK, SCORCH, LAVA, STORM, SPIRIT, UNDEAD, SAND, BLOOD;
+    METAL, GLASS, PLASMA, QUICK, SCORCH, LAVA, STORM, SPIRIT, UNDEAD, SAND, BLOOD, KI;
 
     public String displayName() {
         if (this == AIR) return "Wind";
